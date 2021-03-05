@@ -336,7 +336,10 @@ struct OMPInformationCache : public InformationCache {
   void initializeRuntimeFunctions() {
     Module &M = *((*ModuleSlice.begin())->getParent());
 
-    // Helper macros for handling __VA_ARGS__ in OMP_RTL
+    for (unsigned I = 0; I < M.getNumTargets(); ++I) {
+      M.setActiveTarget(I);
+
+// Helper macros for handling __VA_ARGS__ in OMP_RTL
 #define OMP_TYPE(VarName, ...)                                                 \
   Type *VarName = OMPBuilder.VarName;                                          \
   (void)VarName;
@@ -384,6 +387,7 @@ struct OMPInformationCache : public InformationCache {
     }                                                                          \
   }
 #include "llvm/Frontend/OpenMP/OMPKinds.def"
+    }
 
     // TODO: We should attach the attributes defined in OMPKinds.def.
   }
@@ -509,6 +513,9 @@ struct OpenMPOpt {
       printICVs();
     if (PrintOpenMPKernels)
       printKernels();
+
+    if (M.isHeterogenousModule())
+      Changed |= addCallBackOperandBundles();
 
     Changed |= rewriteDeviceCodeStateMachine();
 
@@ -1503,6 +1510,8 @@ private:
   /// the cases we can avoid taking the address of a function.
   bool rewriteDeviceCodeStateMachine();
 
+  bool addCallBackOperandBundles();
+
   ///
   ///}}
 
@@ -1799,6 +1808,114 @@ bool OpenMPOpt::rewriteDeviceCodeStateMachine() {
     ++NumOpenMPParallelRegionsReplacedInGPUStateMachine;
 
     Changed = true;
+  }
+
+  return Changed;
+}
+
+bool OpenMPOpt::addCallBackOperandBundles() {
+  assert(M.isHeterogenousModule());
+
+  bool Changed = false;
+
+  SmallVector<std::pair<CallInst *, int64_t>, 8> WorkList;
+
+  auto FindCallBackIdx = [&WorkList](llvm::Use &U, llvm::Function &) {
+    CallInst *CI = dyn_cast<CallInst>(U.getUser());
+    if (!CI)
+      return false;
+
+    // FIXME: Temporary solution
+    WorkList.push_back(std::make_pair(CI, 2));
+
+    // Function *Callee = CI->getCalledFunction();
+    // MDNode *CallbackMD = Callee->getMetadata(LLVMContext::MD_callback);
+    // if (!CallbackMD)
+    //   return false;
+
+    // MDNode *CallbackEncMD = cast<MDNode>(CallbackMD->getOperand(0));
+    // assert(CallbackEncMD && "Empty callback metadata");
+    // assert(CallbackEncMD->getNumOperands() >= 2 &&
+    //        "Incomplete !callback metadata");
+
+    // Metadata *OpAsM = CallbackEncMD->getOperand(0).get();
+    // auto *OpAsCM = cast<ConstantAsMetadata>(OpAsM);
+    // assert(OpAsCM->getType()->isIntegerTy(64) &&
+    //        "Malformed !callback metadata");
+
+    // int64_t Idx = cast<ConstantInt>(OpAsCM->getValue())->getSExtValue();
+    // assert(Idx >= 0 && Idx < CI->getNumArgOperands() &&
+    //        "Out-of-bounds !callback metadata index");
+
+    // WorkList.push_back(std::make_pair(CI, Idx));
+    return false;
+  };
+
+  RuntimeFunction TargetRuntimeCallIDs[] = {
+      OMPRTL___tgt_target_mapper, OMPRTL___tgt_target_nowait_mapper,
+      OMPRTL___tgt_target_teams_mapper,
+      OMPRTL___tgt_target_teams_nowait_mapper};
+
+  for (auto TargetRuntimeCallID : TargetRuntimeCallIDs) {
+    OMPInformationCache::RuntimeFunctionInfo &RFI =
+        OMPInfoCache.RFIs[TargetRuntimeCallID];
+    if (!RFI)
+      continue;
+
+    for (Function *F : SCC)
+      RFI.foreachUse(FindCallBackIdx, F);
+  }
+
+  if (WorkList.empty())
+    return Changed;
+
+  for (auto &WorkItem : WorkList) {
+    CallInst *CI = WorkItem.first;
+    int64_t Idx = WorkItem.second;
+
+    Value *KernelIdOp = CI->getArgOperand(Idx);
+    assert(KernelIdOp && "KernelIdOp shoule not be null");
+
+    GlobalVariable *KernelIdVar = dyn_cast<GlobalVariable>(KernelIdOp);
+    assert(KernelIdVar && "KernelIdOp should be a global variable");
+
+    // Extract kernel function name from kernel id. Kernel id is composed by:
+    // 1. A leading dot ".";
+    // 2. Kernel function name;
+    // 3. Tailing ".region_id"
+    // For example, if we have a kernel function named "kernel_func", then the
+    // kernel id, which will be a global variable valued 0, will be named
+    // ".kernel_func.region_id".
+    // Therefore, now given the kernel id, we can get the kernel function name
+    // by removing the leading dot and tailing ".region_id".
+    StringRef KernelId =
+        llvm::heterogenous::demangleName(KernelIdVar->getName()).second;
+    StringRef KernelFuncName = KernelId.substr(1, KernelId.size() - 11);
+
+    // We might have multiple kernel funcions with the same original name in a
+    // heterogenous module. We need to get all of them.
+    SmallVector<Value *, 4> Inputs;
+
+    for (unsigned I = 0; I < M.getNumTargets(); ++I) {
+      // It is possible that on a specific target, the kernel doesn't exist,
+      // e.g. when `declare variant` is being used.
+      if (Function *F = M.getFunction(KernelFuncName, I))
+        Inputs.push_back(F);
+    }
+
+    // If there is no kernel found, just skip current CI.
+    if (Inputs.empty())
+      continue;
+
+    if (!Changed)
+      Changed = true;
+
+    // Corresponding kernel functions are encoded into an operand bundle with
+    // the name same as KernelId.
+    OperandBundleDef OB(std::string(KernelId), Inputs);
+    auto *NewCI = CallInst::Create(CI, OB, CI);
+    CI->replaceAllUsesWith(NewCI);
+    CI->eraseFromParent();
   }
 
   return Changed;

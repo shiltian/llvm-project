@@ -443,6 +443,31 @@ bool LLParser::parseTargetDefinition() {
       return true;
     M->setDataLayout(Str);
     return false;
+  case lltok::APSInt:
+    assert(Lex.getKind() == lltok::APSInt);
+    unsigned TargetId = Lex.getAPSIntVal().getZExtValue();
+    M->markHeterogenous();
+    // TODO: Use a more robust way to set the number of targets
+    M->setNumTargets(TargetId + 1);
+    switch (Lex.Lex()) {
+    default:
+      return tokError("unknown target property");
+    case lltok::kw_triple:
+      Lex.Lex();
+      if (parseToken(lltok::equal, "expected '=' after target triple") ||
+          parseStringConstant(Str))
+        return true;
+      M->setTargetTriple(Str, TargetId);
+      return false;
+    case lltok::kw_datalayout:
+      Lex.Lex();
+      if (parseToken(lltok::equal, "expected '=' after target datalayout") ||
+          parseStringConstant(Str))
+        return true;
+      M->setDataLayout(Str, TargetId);
+      return false;
+    }
+    llvm_unreachable("should never reach here");
   }
 }
 

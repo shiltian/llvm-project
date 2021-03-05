@@ -1416,34 +1416,43 @@ Error IRLinker::run() {
     if (Error Err = SrcM->getMaterializer()->materializeMetadata())
       return Err;
 
-  // Inherit the target data from the source module if the destination module
-  // doesn't have one already.
-  if (DstM.getDataLayout().isDefault())
-    DstM.setDataLayout(SrcM->getDataLayout());
-
-  if (SrcM->getDataLayout() != DstM.getDataLayout()) {
-    emitWarning("Linking two modules of different data layouts: '" +
-                SrcM->getModuleIdentifier() + "' is '" +
-                SrcM->getDataLayoutStr() + "' whereas '" +
-                DstM.getModuleIdentifier() + "' is '" +
-                DstM.getDataLayoutStr() + "'\n");
-  }
-
-  // Copy the target triple from the source to dest if the dest's is empty.
-  if (DstM.getTargetTriple().empty() && !SrcM->getTargetTriple().empty())
-    DstM.setTargetTriple(SrcM->getTargetTriple());
+  const auto IsHeterogenousModule = DstM.isHeterogenousModule();
 
   Triple SrcTriple(SrcM->getTargetTriple()), DstTriple(DstM.getTargetTriple());
 
-  if (!SrcM->getTargetTriple().empty()&&
-      !SrcTriple.isCompatibleWith(DstTriple))
-    emitWarning("Linking two modules of different target triples: '" +
-                SrcM->getModuleIdentifier() + "' is '" +
-                SrcM->getTargetTriple() + "' whereas '" +
-                DstM.getModuleIdentifier() + "' is '" + DstM.getTargetTriple() +
-                "'\n");
+  // If it is a heterogenous module, we need to do something different
+  if (IsHeterogenousModule) {
+    const auto CurrentTargetId = DstM.getActiveTarget();
+    DstM.setDataLayout(SrcM->getDataLayout(), CurrentTargetId);
+    DstM.setTargetTriple(SrcTriple.getTriple(), CurrentTargetId);
+  } else {
+    // Inherit the target data from the source module if the destination module
+    // doesn't have one already.
+    if (DstM.getDataLayout().isDefault())
+      DstM.setDataLayout(SrcM->getDataLayout());
 
-  DstM.setTargetTriple(SrcTriple.merge(DstTriple));
+    if (SrcM->getDataLayout() != DstM.getDataLayout()) {
+      emitWarning("Linking two modules of different data layouts: '" +
+                  SrcM->getModuleIdentifier() + "' is '" +
+                  SrcM->getDataLayoutStr() + "' whereas '" +
+                  DstM.getModuleIdentifier() + "' is '" +
+                  DstM.getDataLayoutStr() + "'\n");
+    }
+
+    // Copy the target triple from the source to dest if the dest's is empty.
+    if (DstM.getTargetTriple().empty() && !SrcM->getTargetTriple().empty())
+      DstM.setTargetTriple(SrcM->getTargetTriple());
+
+    if (!SrcM->getTargetTriple().empty() &&
+        !SrcTriple.isCompatibleWith(DstTriple))
+      emitWarning("Linking two modules of different target triples: '" +
+                  SrcM->getModuleIdentifier() + "' is '" +
+                  SrcM->getTargetTriple() + "' whereas '" +
+                  DstM.getModuleIdentifier() + "' is '" +
+                  DstM.getTargetTriple() + "'\n");
+
+    DstM.setTargetTriple(SrcTriple.merge(DstTriple));
+  }
 
   // Loop over all of the linked values to compute type mappings.
   computeTypeMapping();
@@ -1475,10 +1484,14 @@ Error IRLinker::run() {
   // are properly remapped.
   linkNamedMDNodes();
 
-  if (!IsPerformingImport && !SrcM->getModuleInlineAsm().empty()) {
-    // Append the module inline asm string.
-    DstM.appendModuleInlineAsm(adjustInlineAsm(SrcM->getModuleInlineAsm(),
-                                               SrcTriple));
+  if (!IsPerformingImport) {
+    if (IsHeterogenousModule)
+      DstM.appendModuleInlineAsm(SrcM->getModuleInlineAsm(),
+                                 DstM.getActiveTarget());
+    else if (!SrcM->getModuleInlineAsm().empty())
+      // Append the module inline asm string.
+      DstM.appendModuleInlineAsm(
+          adjustInlineAsm(SrcM->getModuleInlineAsm(), SrcTriple));
   } else if (IsPerformingImport) {
     // Import any symver directives for symbols in DstM.
     ModuleSymbolTable::CollectAsmSymvers(*SrcM,

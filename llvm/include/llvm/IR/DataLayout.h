@@ -265,6 +265,9 @@ public:
 
   bool isIllegalInteger(uint64_t Width) const { return !isLegalInteger(Width); }
 
+  /// Return true if this DataLayout is compatible with \p Other.
+  bool isCompatibleWith(const DataLayout &Other) const;
+
   /// Returns true if the given alignment exceeds the natural stack alignment.
   bool exceedsNaturalStackAlignment(Align Alignment) const {
     return StackNaturalAlign && (Alignment > *StackNaturalAlign);

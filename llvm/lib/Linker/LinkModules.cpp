@@ -20,6 +20,7 @@
 #include "llvm/IR/Module.h"
 #include "llvm/Linker/Linker.h"
 #include "llvm/Support/Error.h"
+#include "llvm/Transforms/Utils/HeterogenousModuleUtils.h"
 using namespace llvm;
 
 namespace {
@@ -569,11 +570,53 @@ bool ModuleLinker::run() {
   return false;
 }
 
+namespace {
+/// Helper class to manage target number when linking a new module into a
+/// heterogenous module.
+struct HeterogenousModuleLinkerHelper {
+  Module &DstM;
+  Module &SrcM;
+
+public:
+  HeterogenousModuleLinkerHelper(Module &Dst, Module &Src)
+      : DstM(Dst), SrcM(Src) {
+    assert(DstM.isHeterogenousModule());
+    const unsigned NumTargets = DstM.getNumTargets();
+    DstM.setActiveTarget(NumTargets);
+    llvm::heterogenous::renameModuleSymbols(Src, NumTargets);
+  }
+
+  /// After the link, set the active target to 0
+  ~HeterogenousModuleLinkerHelper() {
+    DstM.setNumTargets(DstM.getNumTargets() + 1);
+    DstM.setActiveTarget(0);
+  }
+
+  /// Return true if the two modules have compatible data layout
+  bool isCompatible() const {
+    return DstM.getDataLayout(0).isCompatibleWith(SrcM.getDataLayout());
+  }
+};
+} // namespace
+
 Linker::Linker(Module &M) : Mover(M) {}
 
 bool Linker::linkInModule(
     std::unique_ptr<Module> Src, unsigned Flags,
     std::function<void(Module &, const StringSet<> &)> InternalizeCallback) {
+  Module &DstM = Mover.getModule();
+  std::unique_ptr<HeterogenousModuleLinkerHelper> Helper;
+
+  if (DstM.isHeterogenousModule()) {
+    Helper = std::make_unique<HeterogenousModuleLinkerHelper>(DstM, *Src);
+    // We skip the check for the first module
+    if (DstM.getNumTargets() && !Helper->isCompatible()) {
+      DstM.getContext().diagnose(LinkDiagnosticInfo(
+          DS_Error, "Uncompatible modules cannot be linked together"));
+      return true;
+    }
+  }
+
   ModuleLinker ModLinker(Mover, std::move(Src), Flags,
                          std::move(InternalizeCallback));
   return ModLinker.run();

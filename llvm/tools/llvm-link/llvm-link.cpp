@@ -110,6 +110,11 @@ static cl::opt<bool> PreserveAssemblyUseListOrder(
     cl::desc("Preserve use-list order when writing LLVM assembly."),
     cl::init(false), cl::Hidden);
 
+static cl::opt<bool>
+    HeterogenousModule("heterogenous-module",
+                       cl::desc("Generate a heterogenous module."),
+                       cl::init(false), cl::Hidden);
+
 static ExitOnError ExitOnErr;
 
 // Read the specified bitcode file in and return it. This routine searches the
@@ -439,6 +444,8 @@ int main(int argc, char **argv) {
     Context.enableDebugTypeODRUniquing();
 
   auto Composite = std::make_unique<Module>("llvm-link", Context);
+  if (HeterogenousModule)
+    Composite->markHeterogenous();
   Linker L(*Composite);
 
   unsigned Flags = Linker::Flags::None;

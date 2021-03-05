@@ -94,4 +94,7 @@
 /* Define to 1 to enable the experimental new pass manager by default */
 #cmakedefine01 LLVM_ENABLE_NEW_PASS_MANAGER
 
+/* Define as the number of targets that a heterogenous module can support */
+#cmakedefine LLVM_MODULE_NUM_TARGETS ${LLVM_MODULE_NUM_TARGETS}
+
 #endif

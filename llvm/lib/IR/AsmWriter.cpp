@@ -2786,27 +2786,43 @@ void AssemblyWriter::printModule(const Module *M) {
     Out << "\"\n";
   }
 
-  const std::string &DL = M->getDataLayoutStr();
-  if (!DL.empty())
-    Out << "target datalayout = \"" << DL << "\"\n";
-  if (!M->getTargetTriple().empty())
-    Out << "target triple = \"" << M->getTargetTriple() << "\"\n";
+  if (M->isHeterogenousModule()) {
+    for (unsigned I = 0; I < M->getNumTargets(); ++I) {
+      const std::string TargetId(std::move(std::to_string(I)));
 
-  if (!M->getModuleInlineAsm().empty()) {
-    Out << '\n';
+      const std::string &DL = M->getDataLayoutStr(I);
+      if (!DL.empty())
+        Out << "target " << TargetId << " datalayout = \"" << DL << "\"\n";
 
-    // Split the string into lines, to make it easier to read the .ll file.
-    StringRef Asm = M->getModuleInlineAsm();
-    do {
-      StringRef Front;
-      std::tie(Front, Asm) = Asm.split('\n');
+      const std::string &T = M->getTargetTriple(I);
+      if (!T.empty())
+        Out << "target " << TargetId << " triple = \"" << T << "\"\n";
 
-      // We found a newline, print the portion of the asm string from the
-      // last newline up to this newline.
-      Out << "module asm \"";
-      printEscapedString(Front, Out);
-      Out << "\"\n";
-    } while (!Asm.empty());
+      // FIXME: Print inline asm
+    }
+  } else {
+    const std::string &DL = M->getDataLayoutStr();
+    if (!DL.empty())
+      Out << "target datalayout = \"" << DL << "\"\n";
+    if (!M->getTargetTriple().empty())
+      Out << "target triple = \"" << M->getTargetTriple() << "\"\n";
+
+    if (!M->getModuleInlineAsm().empty()) {
+      Out << '\n';
+
+      // Split the string into lines, to make it easier to read the .ll file.
+      StringRef Asm = M->getModuleInlineAsm();
+      do {
+        StringRef Front;
+        std::tie(Front, Asm) = Asm.split('\n');
+
+        // We found a newline, print the portion of the asm string from the
+        // last newline up to this newline.
+        Out << "module asm \"";
+        printEscapedString(Front, Out);
+        Out << "\"\n";
+      } while (!Asm.empty());
+    }
   }
 
   printTypeIdentities();

@@ -1103,6 +1103,15 @@ struct OperandBundleUse {
     return getTagID() == LLVMContext::OB_cfguardtarget;
   }
 
+  /// Return true if the use \p U is in the operand bundle.
+  bool isUseInBundle(const Use * U) const {
+    for (const Use &UseInThisBundle : Inputs)
+      if (*U == UseInThisBundle)
+        return true;
+
+    return false;
+  }
+
 private:
   /// Pointer to an entry in LLVMContextImpl::getOrInsertBundleTag.
   StringMapEntry<uint32_t> *Tag;

@@ -74,8 +74,13 @@ template class llvm::SymbolTableListTraits<GlobalIFunc>;
 Module::Module(StringRef MID, LLVMContext &C)
     : Context(C), ValSymTab(std::make_unique<ValueSymbolTable>()),
       Materializer(), ModuleID(std::string(MID)),
-      SourceFileName(std::string(MID)), DL("") {
+      SourceFileName(std::string(MID)), DL(""), IsHeterogenousModule(false),
+      NumTargets(0) {
   Context.addModule(this);
+
+  TargetTriples.resize(LLVM_MODULE_NUM_TARGETS);
+  GlobalScopeAsms.resize(LLVM_MODULE_NUM_TARGETS);
+  DLs.resize(LLVM_MODULE_NUM_TARGETS, DataLayout(""));
 }
 
 Module::~Module() {
@@ -111,7 +116,23 @@ Module::createRNG(const StringRef Name) const {
 /// the specified name, of arbitrary type.  This method returns null
 /// if a global with the specified name is not found.
 GlobalValue *Module::getNamedValue(StringRef Name) const {
+  // If it is a heterogenous module, the name is not mangled and internal, we
+  // need to search using mangled name
+  if (IsHeterogenousModule && !llvm::heterogenous::isInternalName(Name) &&
+      !llvm::heterogenous::isMangledName(Name))
+    return getNamedValue(Name, ActiveTarget);
+
   return cast_or_null<GlobalValue>(getValueSymbolTable().lookup(Name));
+}
+
+GlobalValue *Module::getNamedValue(StringRef Name, unsigned TargetId) const {
+  assert(IsHeterogenousModule &&
+         "This function should be only called when the module is heterogenous");
+  assert(TargetId < LLVM_MODULE_NUM_TARGETS &&
+         "TargetId is expected in [0, 31]");
+
+  return cast_or_null<GlobalValue>(getValueSymbolTable().lookup(
+      llvm::heterogenous::mangleName(Name, TargetId)));
 }
 
 /// getMDKindID - Return a unique non-zero ID for the specified metadata kind.
@@ -148,7 +169,7 @@ FunctionCallee Module::getOrInsertFunction(StringRef Name, FunctionType *Ty,
     // Nope, add it
     Function *New = Function::Create(Ty, GlobalVariable::ExternalLinkage,
                                      DL.getProgramAddressSpace(), Name);
-    if (!New->isIntrinsic())       // Intrinsics get attrs set on construction
+    if (!New->isIntrinsic()) // Intrinsics get attrs set on construction
       New->setAttributes(AttributeList);
     FunctionList.push_back(New);
     return {Ty, New}; // Return the new prototype.
@@ -164,8 +185,29 @@ FunctionCallee Module::getOrInsertFunction(StringRef Name, FunctionType *Ty,
   return {Ty, F};
 }
 
+FunctionCallee Module::getOrInsertFunction(StringRef Name, FunctionType *Ty,
+                                           AttributeList AttributeList,
+                                           unsigned TargetId) {
+  assert(IsHeterogenousModule &&
+         "This function should be only called when the module is heterogenous");
+  assert(TargetId < LLVM_MODULE_NUM_TARGETS &&
+         "TargetId is expected in [0, 31]");
+
+  return getOrInsertFunction(llvm::heterogenous::mangleName(Name, TargetId), Ty,
+                             AttributeList);
+}
+
 FunctionCallee Module::getOrInsertFunction(StringRef Name, FunctionType *Ty) {
   return getOrInsertFunction(Name, Ty, AttributeList());
+}
+
+FunctionCallee Module::getOrInsertFunction(StringRef Name, FunctionType *Ty,
+                                           unsigned TargetId) {
+  assert(IsHeterogenousModule &&
+         "This function should be only called when the module is heterogenous");
+  assert(TargetId < LLVM_MODULE_NUM_TARGETS &&
+         "TargetId is expected in [0, 31]");
+  return getOrInsertFunction(Name, Ty, AttributeList(), TargetId);
 }
 
 // getFunction - Look up the specified function in the module symbol table.
@@ -173,6 +215,14 @@ FunctionCallee Module::getOrInsertFunction(StringRef Name, FunctionType *Ty) {
 //
 Function *Module::getFunction(StringRef Name) const {
   return dyn_cast_or_null<Function>(getNamedValue(Name));
+}
+
+Function *Module::getFunction(StringRef Name, unsigned TargetId) const {
+  assert(IsHeterogenousModule &&
+         "This function should be only called when the module is heterogenous");
+  assert(TargetId < LLVM_MODULE_NUM_TARGETS &&
+         "TargetId is expected in [0, 31]");
+  return getFunction(llvm::heterogenous::mangleName(Name, TargetId));
 }
 
 //===----------------------------------------------------------------------===//
@@ -189,10 +239,20 @@ Function *Module::getFunction(StringRef Name) const {
 GlobalVariable *Module::getGlobalVariable(StringRef Name,
                                           bool AllowLocal) const {
   if (GlobalVariable *Result =
-      dyn_cast_or_null<GlobalVariable>(getNamedValue(Name)))
+          dyn_cast_or_null<GlobalVariable>(getNamedValue(Name)))
     if (AllowLocal || !Result->hasLocalLinkage())
       return Result;
   return nullptr;
+}
+
+GlobalVariable *Module::getGlobalVariable(StringRef Name, bool AllowLocal,
+                                          unsigned TargetId) const {
+  assert(IsHeterogenousModule &&
+         "This function should be only called when the module is heterogenous");
+  assert(TargetId < LLVM_MODULE_NUM_TARGETS &&
+         "TargetId is expected in [0, 31]");
+  return getGlobalVariable(llvm::heterogenous::mangleName(Name, TargetId),
+                           AllowLocal);
 }
 
 /// getOrInsertGlobal - Look up the specified global in the module symbol table.
@@ -221,12 +281,33 @@ Constant *Module::getOrInsertGlobal(
   return GV;
 }
 
+Constant *
+Module::getOrInsertGlobal(StringRef Name, Type *Ty,
+                          function_ref<GlobalVariable *()> CreateGlobalCallback,
+                          unsigned TargetId) {
+  assert(IsHeterogenousModule &&
+         "This function should be only called when the module is heterogenous");
+  assert(TargetId < LLVM_MODULE_NUM_TARGETS &&
+         "TargetId is expected in [0, 31]");
+  return getOrInsertGlobal(llvm::heterogenous::mangleName(Name, TargetId), Ty,
+                           CreateGlobalCallback);
+}
+
 // Overload to construct a global variable using its constructor's defaults.
 Constant *Module::getOrInsertGlobal(StringRef Name, Type *Ty) {
   return getOrInsertGlobal(Name, Ty, [&] {
     return new GlobalVariable(*this, Ty, false, GlobalVariable::ExternalLinkage,
                               nullptr, Name);
   });
+}
+
+Constant *Module::getOrInsertGlobal(StringRef Name, Type *Ty,
+                                    unsigned TargetId) {
+  assert(IsHeterogenousModule &&
+         "This function should be only called when the module is heterogenous");
+  assert(TargetId < LLVM_MODULE_NUM_TARGETS &&
+         "TargetId is expected in [0, 31]");
+  return getOrInsertGlobal(llvm::heterogenous::mangleName(Name, TargetId), Ty);
 }
 
 //===----------------------------------------------------------------------===//
@@ -237,11 +318,35 @@ Constant *Module::getOrInsertGlobal(StringRef Name, Type *Ty) {
 // If it does not exist, return null.
 //
 GlobalAlias *Module::getNamedAlias(StringRef Name) const {
+  if (IsHeterogenousModule)
+    return getNamedAlias(Name, ActiveTarget);
+
   return dyn_cast_or_null<GlobalAlias>(getNamedValue(Name));
 }
 
+GlobalAlias *Module::getNamedAlias(StringRef Name, unsigned TargetId) const {
+  assert(IsHeterogenousModule &&
+         "This function should be only called when the module is heterogenous");
+  assert(TargetId < LLVM_MODULE_NUM_TARGETS &&
+         "TargetId is expected in [0, 31]");
+
+  return dyn_cast_or_null<GlobalAlias>(getNamedValue(Name, TargetId));
+}
+
 GlobalIFunc *Module::getNamedIFunc(StringRef Name) const {
+  if (IsHeterogenousModule)
+    return getNamedIFunc(Name, ActiveTarget);
+
   return dyn_cast_or_null<GlobalIFunc>(getNamedValue(Name));
+}
+
+GlobalIFunc *Module::getNamedIFunc(StringRef Name, unsigned TargetId) const {
+  assert(IsHeterogenousModule &&
+         "This function should be only called when the module is heterogenous");
+  assert(TargetId < LLVM_MODULE_NUM_TARGETS &&
+         "TargetId is expected in [0, 31]");
+
+  return dyn_cast_or_null<GlobalIFunc>(getNamedValue(Name, TargetId));
 }
 
 /// getNamedMetadata - Return the first NamedMDNode in the module with the
@@ -299,10 +404,11 @@ bool Module::isValidModuleFlag(const MDNode &ModFlag, ModFlagBehavior &MFB,
 }
 
 /// getModuleFlagsMetadata - Returns the module flags in the provided vector.
-void Module::
-getModuleFlagsMetadata(SmallVectorImpl<ModuleFlagEntry> &Flags) const {
+void Module::getModuleFlagsMetadata(
+    SmallVectorImpl<ModuleFlagEntry> &Flags) const {
   const NamedMDNode *ModFlags = getModuleFlagsMetadata();
-  if (!ModFlags) return;
+  if (!ModFlags)
+    return;
 
   for (const MDNode *Flag : ModFlags->operands()) {
     ModFlagBehavior MFB;
@@ -388,13 +494,66 @@ void Module::setModuleFlag(ModFlagBehavior Behavior, StringRef Key,
   addModuleFlag(Behavior, Key, Val);
 }
 
-void Module::setDataLayout(StringRef Desc) {
-  DL.reset(Desc);
-}
+void Module::setDataLayout(StringRef Desc) { DL.reset(Desc); }
 
 void Module::setDataLayout(const DataLayout &Other) { DL = Other; }
 
-const DataLayout &Module::getDataLayout() const { return DL; }
+void Module::setDataLayout(StringRef Desc, unsigned TargetId) {
+  assert(IsHeterogenousModule &&
+         "This function should be only called when the module is heterogenous");
+  assert(TargetId < LLVM_MODULE_NUM_TARGETS &&
+         "TargetId is expected in [0, 31]");
+
+  if (TargetId == 0)
+    return setDataLayout(Desc);
+
+  assert(IsHeterogenousModule &&
+         "IsHeterogenousModule should be true if trying to set the target "
+         "layout of non-first target");
+
+  DLs[TargetId - 1].reset(Desc);
+}
+
+void Module::setDataLayout(const DataLayout &Other, unsigned TargetId) {
+  assert(IsHeterogenousModule &&
+         "This function should be only called when the module is heterogenous");
+  assert(TargetId < LLVM_MODULE_NUM_TARGETS &&
+         "TargetId is expected in [0, 31]");
+
+  if (TargetId == 0)
+    return setDataLayout(Other);
+
+  assert(IsHeterogenousModule &&
+         "IsHeterogenousModule should be true if trying to set the target "
+         "layout of non-first target");
+
+  DLs[TargetId - 1] = Other;
+}
+
+const DataLayout &Module::getDataLayout() const {
+  // If it is a heterogenous module, we need to return the one of active target
+  if (IsHeterogenousModule)
+    return getDataLayout(ActiveTarget);
+
+  // Otherwise, the original one will be returned
+  return DL;
+}
+
+const DataLayout &Module::getDataLayout(unsigned TargetId) const {
+  assert(IsHeterogenousModule &&
+         "This function should be only called when the module is heterogenous");
+  assert(TargetId < LLVM_MODULE_NUM_TARGETS &&
+         "TargetId is expected in [0, 31]");
+
+  if (TargetId == 0)
+    return DL;
+
+  assert(IsHeterogenousModule &&
+         "IsHeterogenousModule should be true if trying to get the data layout "
+         "of non-first target");
+
+  return DLs[TargetId - 1];
+}
 
 DICompileUnit *Module::debug_compile_units_iterator::operator*() const {
   return cast<DICompileUnit>(CUs->getOperand(Idx));
@@ -529,7 +688,25 @@ unsigned Module::getInstructionCount() {
 }
 
 Comdat *Module::getOrInsertComdat(StringRef Name) {
+  if (IsHeterogenousModule)
+    return getOrInsertComdat(Name, ActiveTarget);
+
   auto &Entry = *ComdatSymTab.insert(std::make_pair(Name, Comdat())).first;
+  Entry.second.Name = &Entry;
+  return &Entry.second;
+}
+
+Comdat *Module::getOrInsertComdat(StringRef Name, unsigned TargetId) {
+  assert(IsHeterogenousModule &&
+         "This function should be only called when the module is heterogenous");
+  assert(TargetId < LLVM_MODULE_NUM_TARGETS &&
+         "TargetId is expected in [0, 31]");
+
+  auto &Entry =
+      *ComdatSymTab
+           .insert(std::make_pair(
+               llvm::heterogenous::mangleName(Name, TargetId), Comdat()))
+           .first;
   Entry.second.Name = &Entry;
   return &Entry.second;
 }

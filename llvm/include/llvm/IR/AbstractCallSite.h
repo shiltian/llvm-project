@@ -65,7 +65,6 @@ public:
     /// unknown values that are passed to the callee.
     using ParameterEncodingTy = SmallVector<int, 0>;
     ParameterEncodingTy ParameterEncoding;
-
   };
 
 private:
@@ -128,6 +127,12 @@ public:
     return !CI.ParameterEncoding.empty();
   }
 
+  /// Return true if this ACS represents a heterogenous callback call.
+  bool isHeterogenousCallbackCall() const {
+    return isCallbackCall() &&
+           CI.ParameterEncoding[0] != CI.ParameterEncoding.back();
+  }
+
   /// Return true if @p UI is the use that defines the callee of this ACS.
   bool isCallee(Value::const_user_iterator UI) const {
     return isCallee(&UI.getUse());
@@ -140,6 +145,10 @@ public:
 
     assert(!CI.ParameterEncoding.empty() &&
            "Callback without parameter encoding!");
+
+    if (isHeterogenousCallbackCall())
+      return static_cast<int>(CB->getDataOperandNo(U)) ==
+             CI.ParameterEncoding.back();
 
     // If the use is actually in a constant cast expression which itself
     // has only one use, we look through the constant cast expression.
@@ -154,8 +163,9 @@ public:
   unsigned getNumArgOperands() const {
     if (isDirectCall())
       return CB->getNumArgOperands();
-    // Subtract 1 for the callee encoding.
-    return CI.ParameterEncoding.size() - 1;
+    // Subtract 1 for the callee encoding, and another 1 for the heterogenous
+    // callee encoding at the end.
+    return CI.ParameterEncoding.size() - 2;
   }
 
   /// Return the operand index of the underlying instruction associated with @p
@@ -194,7 +204,7 @@ public:
   int getCallArgOperandNoForCallee() const {
     assert(isCallbackCall());
     assert(CI.ParameterEncoding.size() && CI.ParameterEncoding[0] >= 0);
-    return CI.ParameterEncoding[0];
+    return CI.ParameterEncoding.back();
   }
 
   /// Return the use of the callee value in the underlying instruction. Only
@@ -210,7 +220,7 @@ public:
   Value *getCalledOperand() const {
     if (isDirectCall())
       return CB->getCalledOperand();
-    return CB->getArgOperand(getCallArgOperandNoForCallee());
+    return CB->getOperand(getCallArgOperandNoForCallee());
   }
 
   /// Return the function being called if this is a direct call, otherwise

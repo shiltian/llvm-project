@@ -117,6 +117,12 @@ enum ModuleCodes {
 
   // IFUNC: [ifunc value type, addrspace, resolver val#, linkage, visibility]
   MODULE_CODE_IFUNC = 18,
+
+  // NUM_TARGETS: [num of targets]
+  MODULE_CODE_NUM_TARGETS = 19,
+
+  // TARGET_ID: [target id]
+  MODULE_CODE_TARGET_ID = 20,
 };
 
 /// PARAMATTR blocks have code for defining a parameter attribute set.

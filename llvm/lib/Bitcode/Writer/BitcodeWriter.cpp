@@ -1189,16 +1189,43 @@ static StringEncoding getStringEncoding(StringRef Str) {
 /// descriptors for global variables, and function prototype info.
 /// Returns the bit offset to backpatch with the location of the real VST.
 void ModuleBitcodeWriter::writeModuleInfo() {
-  // Emit various pieces of data attached to a module.
-  if (!M.getTargetTriple().empty())
-    writeStringRecord(Stream, bitc::MODULE_CODE_TRIPLE, M.getTargetTriple(),
-                      0 /*TODO*/);
-  const std::string &DL = M.getDataLayoutStr();
-  if (!DL.empty())
-    writeStringRecord(Stream, bitc::MODULE_CODE_DATALAYOUT, DL, 0 /*TODO*/);
-  if (!M.getModuleInlineAsm().empty())
-    writeStringRecord(Stream, bitc::MODULE_CODE_ASM, M.getModuleInlineAsm(),
-                      0 /*TODO*/);
+  // If a heterogenous module only contains one target, we take it as regular
+  // module
+  // FIXME: Finish this part
+  if (M.isHeterogenousModule() && M.getNumTargets() > 1) {
+    const auto NumTargets = M.getNumTargets();
+    writeStringRecord(Stream, bitc::MODULE_CODE_NUM_TARGETS,
+                      std::to_string(NumTargets), 0 /*TODO*/);
+    for (unsigned I = 0; I < NumTargets; ++I) {
+      const std::string &TargetTriple = M.getTargetTriple(I);
+      const std::string &DL = M.getDataLayoutStr(I);
+      const std::string &ModuleInlineAsm = M.getModuleInlineAsm(I);
+
+      if (!TargetTriple.empty() || !DL.empty() || !ModuleInlineAsm.empty())
+        writeStringRecord(Stream, bitc::MODULE_CODE_TARGET_ID,
+                          std::to_string(I), 0 /*TODO*/);
+
+      if (!TargetTriple.empty())
+        writeStringRecord(Stream, bitc::MODULE_CODE_TRIPLE, TargetTriple,
+                          0 /*TODO*/);
+      if (!DL.empty())
+        writeStringRecord(Stream, bitc::MODULE_CODE_DATALAYOUT, DL, 0 /*TODO*/);
+      if (!ModuleInlineAsm.empty())
+        writeStringRecord(Stream, bitc::MODULE_CODE_ASM, ModuleInlineAsm,
+                          0 /*TODO*/);
+    }
+  } else {
+    // Emit various pieces of data attached to a module.
+    if (!M.getTargetTriple().empty())
+      writeStringRecord(Stream, bitc::MODULE_CODE_TRIPLE, M.getTargetTriple(),
+                        0 /*TODO*/);
+    const std::string &DL = M.getDataLayoutStr();
+    if (!DL.empty())
+      writeStringRecord(Stream, bitc::MODULE_CODE_DATALAYOUT, DL, 0 /*TODO*/);
+    if (!M.getModuleInlineAsm().empty())
+      writeStringRecord(Stream, bitc::MODULE_CODE_ASM, M.getModuleInlineAsm(),
+                        0 /*TODO*/);
+  }
 
   // Emit information about sections and GC, computing how many there are. Also
   // compute the maximum alignment value.

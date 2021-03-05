@@ -794,6 +794,9 @@ endif()
 # compatibility.
 set(LLVM_ENABLE_NEW_PASS_MANAGER ${ENABLE_EXPERIMENTAL_NEW_PASS_MANAGER})
 
+# By default a heterogenous module can support 32 targets
+set(LLVM_MODULE_NUM_TARGETS 32)
+
 # Configure the three LLVM configuration header files.
 configure_file(
   ${LLVM_MAIN_INCLUDE_DIR}/llvm/Config/config.h.cmake

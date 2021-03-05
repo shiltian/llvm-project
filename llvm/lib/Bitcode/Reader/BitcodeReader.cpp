@@ -3506,6 +3506,8 @@ Error BitcodeReader::parseModule(uint64_t ResumeBit,
 
   SmallVector<uint64_t, 64> Record;
 
+  unsigned CurrentTargetId = 0;
+
   // Parts of bitcode parsing depend on the datalayout.  Make sure we
   // finalize the datalayout before we run any of that code.
   bool ResolvedDataLayout = false;
@@ -3516,14 +3518,26 @@ Error BitcodeReader::parseModule(uint64_t ResumeBit,
     // datalayout and triple can't be parsed after this point.
     ResolvedDataLayout = true;
 
-    // Upgrade data layout string.
-    std::string DL = llvm::UpgradeDataLayoutString(
-        TheModule->getDataLayoutStr(), TheModule->getTargetTriple());
-    TheModule->setDataLayout(DL);
+    if (TheModule->isHeterogenousModule()) {
+      // Upgrade data layout string.
+      std::string DL = llvm::UpgradeDataLayoutString(
+          TheModule->getDataLayoutStr(CurrentTargetId),
+          TheModule->getTargetTriple(CurrentTargetId));
+      TheModule->setDataLayout(DL, CurrentTargetId);
 
-    if (auto LayoutOverride =
-            DataLayoutCallback(TheModule->getTargetTriple()))
-      TheModule->setDataLayout(*LayoutOverride);
+      if (auto LayoutOverride =
+              DataLayoutCallback(TheModule->getTargetTriple(CurrentTargetId)))
+        TheModule->setDataLayout(*LayoutOverride, CurrentTargetId);
+    } else {
+      // Upgrade data layout string.
+      std::string DL = llvm::UpgradeDataLayoutString(
+          TheModule->getDataLayoutStr(), TheModule->getTargetTriple());
+      TheModule->setDataLayout(DL);
+
+      if (auto LayoutOverride =
+              DataLayoutCallback(TheModule->getTargetTriple()))
+        TheModule->setDataLayout(*LayoutOverride);
+    }
   };
 
   // Read all the records for this module.
@@ -3682,6 +3696,16 @@ Error BitcodeReader::parseModule(uint64_t ResumeBit,
       return MaybeBitCode.takeError();
     switch (unsigned BitCode = MaybeBitCode.get()) {
     default: break;  // Default behavior, ignore unknown content.
+    case bitc::MODULE_CODE_TARGET_ID: {
+      std::string S;
+      if (convertToString(Record, 0, S))
+        return error("Invalid record");
+      CurrentTargetId = std::stoul(S);
+      if (!TheModule->isHeterogenousModule())
+        TheModule->markHeterogenous();
+      TheModule->setNumTargets(CurrentTargetId + 1);
+      break;
+    }
     case bitc::MODULE_CODE_VERSION: {
       Expected<unsigned> VersionOrErr = parseVersionRecord(Record);
       if (!VersionOrErr)
@@ -3695,7 +3719,10 @@ Error BitcodeReader::parseModule(uint64_t ResumeBit,
       std::string S;
       if (convertToString(Record, 0, S))
         return error("Invalid record");
-      TheModule->setTargetTriple(S);
+      if (TheModule->isHeterogenousModule())
+        TheModule->setTargetTriple(S, CurrentTargetId);
+      else
+        TheModule->setTargetTriple(S);
       break;
     }
     case bitc::MODULE_CODE_DATALAYOUT: {  // DATALAYOUT: [strchr x N]
@@ -3704,14 +3731,20 @@ Error BitcodeReader::parseModule(uint64_t ResumeBit,
       std::string S;
       if (convertToString(Record, 0, S))
         return error("Invalid record");
-      TheModule->setDataLayout(S);
+      if (TheModule->isHeterogenousModule())
+        TheModule->setDataLayout(S, CurrentTargetId);
+      else
+        TheModule->setDataLayout(S);
       break;
     }
     case bitc::MODULE_CODE_ASM: {  // ASM: [strchr x N]
       std::string S;
       if (convertToString(Record, 0, S))
         return error("Invalid record");
-      TheModule->setModuleInlineAsm(S);
+      if (TheModule->isHeterogenousModule())
+        TheModule->setModuleInlineAsm(S, CurrentTargetId);
+      else
+        TheModule->setModuleInlineAsm(S);
       break;
     }
     case bitc::MODULE_CODE_DEPLIB: {  // DEPLIB: [strchr x N]

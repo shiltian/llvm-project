@@ -65,8 +65,8 @@ class VersionTuple;
 /// variable is destroyed, it should have no entries in the GlobalValueRefMap.
 /// The main container class for the LLVM Intermediate Representation.
 class Module {
-/// @name Types And Enumerations
-/// @{
+  /// @name Types And Enumerations
+  /// @{
 public:
   /// The type for the list of global variables.
   using GlobalListType = SymbolTableList<GlobalVariable>;
@@ -171,48 +171,66 @@ public:
         : Behavior(B), Key(K), Val(V) {}
   };
 
-/// @}
-/// @name Member Variables
-/// @{
+  /// @}
+  /// @name Member Variables
+  /// @{
 private:
-  LLVMContext &Context;           ///< The LLVMContext from which types and
-                                  ///< constants are allocated.
-  GlobalListType GlobalList;      ///< The Global Variables in the module
-  FunctionListType FunctionList;  ///< The Functions in the module
-  AliasListType AliasList;        ///< The Aliases in the module
-  IFuncListType IFuncList;        ///< The IFuncs in the module
-  NamedMDListType NamedMDList;    ///< The named metadata in the module
-  std::string GlobalScopeAsm;     ///< Inline Asm at global scope.
+  LLVMContext &Context;          ///< The LLVMContext from which types and
+                                 ///< constants are allocated.
+  GlobalListType GlobalList;     ///< The Global Variables in the module
+  FunctionListType FunctionList; ///< The Functions in the module
+  AliasListType AliasList;       ///< The Aliases in the module
+  IFuncListType IFuncList;       ///< The IFuncs in the module
+  NamedMDListType NamedMDList;   ///< The named metadata in the module
+  std::string GlobalScopeAsm;    ///< Inline Asm at global scope.
   std::unique_ptr<ValueSymbolTable> ValSymTab; ///< Symbol table for values
-  ComdatSymTabType ComdatSymTab;  ///< Symbol table for COMDATs
+  ComdatSymTabType ComdatSymTab;               ///< Symbol table for COMDATs
   std::unique_ptr<MemoryBuffer>
-  OwnedMemoryBuffer;              ///< Memory buffer directly owned by this
-                                  ///< module, for legacy clients only.
+      OwnedMemoryBuffer; ///< Memory buffer directly owned by this
+                         ///< module, for legacy clients only.
   std::unique_ptr<GVMaterializer>
-  Materializer;                   ///< Used to materialize GlobalValues
-  std::string ModuleID;           ///< Human readable identifier for the module
-  std::string SourceFileName;     ///< Original source file name for module,
-                                  ///< recorded in bitcode.
-  std::string TargetTriple;       ///< Platform target triple Module compiled on
-                                  ///< Format: (arch)(sub)-(vendor)-(sys0-(abi)
-  NamedMDSymTabType NamedMDSymTab;  ///< NamedMDNode names.
-  DataLayout DL;                  ///< DataLayout associated with the module
+      Materializer;           ///< Used to materialize GlobalValues
+  std::string ModuleID;       ///< Human readable identifier for the module
+  std::string SourceFileName; ///< Original source file name for module,
+                              ///< recorded in bitcode.
+  std::string TargetTriple;   ///< Platform target triple Module compiled on
+                              ///< Format: (arch)(sub)-(vendor)-(sys0-(abi)
+  NamedMDSymTabType NamedMDSymTab; ///< NamedMDNode names.
+  DataLayout DL;                   ///< DataLayout associated with the module
+
+  /// @}
+  /// @name Members for heterogenous module
+  /// @{
+
+  bool IsHeterogenousModule; ///< Whether this module is heterogenous
+  SmallVector<DataLayout, LLVM_MODULE_NUM_TARGETS>
+      DLs; ///< DataLayout associated with the heterogenous module
+  SmallVector<std::string, LLVM_MODULE_NUM_TARGETS>
+      TargetTriples; ///< Platform target triple the heterogenous module
+  SmallVector<std::string, LLVM_MODULE_NUM_TARGETS>
+      GlobalScopeAsms; ///< Inline Asm at global scope.
+  unsigned
+      ActiveTarget; ///< The active target id if heterogenous module is enabled
+  unsigned NumTargets;
 
   friend class Constant;
 
-/// @}
-/// @name Constructors
-/// @{
+  /// @}
+  /// @name Constructors
+  /// @{
 public:
   /// The Module constructor. Note that there is no default constructor. You
   /// must provide a name for the module upon construction.
-  explicit Module(StringRef ModuleID, LLVMContext& C);
+  explicit Module(StringRef ModuleID, LLVMContext &C);
   /// The module destructor. This will dropAllReferences.
   ~Module();
 
-/// @}
-/// @name Module Level Accessors
-/// @{
+  /// @}
+  /// @name Module Level Accessors
+  /// @{
+
+  /// Return if the module is heterogenous module
+  bool isHeterogenousModule() const { return IsHeterogenousModule; }
 
   /// Get the module identifier which is, essentially, the name of the module.
   /// @returns the module identifier as a string
@@ -238,15 +256,64 @@ public:
   /// Get the data layout string for the module's target platform. This is
   /// equivalent to getDataLayout()->getStringRepresentation().
   const std::string &getDataLayoutStr() const {
+    // If it is a heterogenous module, we need to return the one of active
+    // target
+    if (IsHeterogenousModule)
+      return getDataLayoutStr(ActiveTarget);
+
+    // Otherwise, the original one will be returned
     return DL.getStringRepresentation();
+  }
+
+  /// Get the data layout string for the TargetId-th module's target platform.
+  const std::string &getDataLayoutStr(unsigned TargetId) const {
+    assert(TargetId < LLVM_MODULE_NUM_TARGETS &&
+           "TargetId is expected in [0, 31]");
+
+    if (TargetId == 0)
+      return DL.getStringRepresentation();
+
+    assert(IsHeterogenousModule &&
+           "IsHeterogenousModule should be true if trying to get the data "
+           "layout string of non-first target");
+
+    return DLs[TargetId - 1].getStringRepresentation();
   }
 
   /// Get the data layout for the module's target platform.
   const DataLayout &getDataLayout() const;
 
+  /// Get the data layout for the TargetId-th module's target platform.
+  const DataLayout &getDataLayout(unsigned TargetId) const;
+
   /// Get the target triple which is a string describing the target host.
   /// @returns a string containing the target triple.
-  const std::string &getTargetTriple() const { return TargetTriple; }
+  const std::string &getTargetTriple() const {
+    // If it is a heterogenous module, we need to return the one of active
+    // target
+    if (IsHeterogenousModule)
+      return getTargetTriple(ActiveTarget);
+
+    // Otherwise, the original one will be returned
+    return TargetTriple;
+  }
+
+  /// Get the TargetId-th target triple which is a string describing the target
+  /// host.
+  /// @returns a string containing the target triple.
+  const std::string &getTargetTriple(unsigned TargetId) const {
+    assert(TargetId < LLVM_MODULE_NUM_TARGETS &&
+           "TargetId is expected in [0, 31]");
+
+    if (TargetId == 0)
+      return TargetTriple;
+
+    assert(IsHeterogenousModule &&
+           "IsHeterogenousModule should be true if trying to get the target "
+           "triple of non-first target");
+
+    return TargetTriples[TargetId - 1];
+  }
 
   /// Get the global data context.
   /// @returns LLVMContext - a container for LLVM's global information
@@ -254,7 +321,31 @@ public:
 
   /// Get any module-scope inline assembly blocks.
   /// @returns a string containing the module-scope inline assembly blocks.
-  const std::string &getModuleInlineAsm() const { return GlobalScopeAsm; }
+  const std::string &getModuleInlineAsm() const {
+    // If it is a heterogenous module, we need to return the one of active
+    // target
+    if (IsHeterogenousModule)
+      return getModuleInlineAsm(ActiveTarget);
+
+    // Otherwise, the original one will be returned
+    return GlobalScopeAsm;
+  }
+
+  /// Get any module-scope inline assembly blocks from TargetId-th module.
+  /// @returns a string containing the module-scope inline assembly blocks.
+  const std::string &getModuleInlineAsm(unsigned TargetId) const {
+    assert(TargetId < LLVM_MODULE_NUM_TARGETS &&
+           "TargetId is expected in [0, 31]");
+
+    if (TargetId == 0)
+      return GlobalScopeAsm;
+
+    assert(IsHeterogenousModule &&
+           "IsHeterogenousModule should be true if trying to get the inline "
+           "assembly blocks of non-first target");
+
+    return GlobalScopeAsms[TargetId - 1];
+  }
 
   /// Get a RandomNumberGenerator salted for use with this module. The
   /// RNG can be seeded via -rng-seed=<uint64> and is salted with the
@@ -278,6 +369,9 @@ public:
   /// @name Module Level Mutators
   /// @{
 
+  /// Mark the module as heterogenous
+  void markHeterogenous() { IsHeterogenousModule = true; }
+
   /// Set the module identifier.
   void setModuleIdentifier(StringRef ID) { ModuleID = std::string(ID); }
 
@@ -287,34 +381,86 @@ public:
   /// Set the data layout
   void setDataLayout(StringRef Desc);
   void setDataLayout(const DataLayout &Other);
+  void setDataLayout(StringRef Desc, unsigned TargetId);
+  void setDataLayout(const DataLayout &Other, unsigned TargetId);
 
   /// Set the target triple.
+  // Target triple should only be set when building the module, so we don't need
+  // to use ActiveTarget here.
   void setTargetTriple(StringRef T) { TargetTriple = std::string(T); }
+  void setTargetTriple(StringRef T, unsigned TargetId) {
+    assert(TargetId < LLVM_MODULE_NUM_TARGETS &&
+           "TargetId is expected in [0, 31]");
+
+    if (TargetId == 0)
+      return setTargetTriple(T);
+
+    assert(IsHeterogenousModule &&
+           "IsHeterogenousModule should be true if trying to set the target "
+           "triple of non-first target");
+
+    TargetTriples[TargetId - 1] = std::string(T);
+  }
 
   /// Set the module-scope inline assembly blocks.
   /// A trailing newline is added if the input doesn't have one.
   void setModuleInlineAsm(StringRef Asm) {
+    if (IsHeterogenousModule) {
+      setModuleInlineAsm(Asm, ActiveTarget);
+      return;
+    }
+
     GlobalScopeAsm = std::string(Asm);
     if (!GlobalScopeAsm.empty() && GlobalScopeAsm.back() != '\n')
       GlobalScopeAsm += '\n';
   }
 
+  /// Set the module-scope inline assembly blocks of TargetId-th target.
+  /// A trailing newline is added if the input doesn't have one.
+  void setModuleInlineAsm(StringRef Asm, unsigned TargetId) {
+    assert(TargetId < LLVM_MODULE_NUM_TARGETS &&
+           "TargetId is expected in [0, 31]");
+
+    std::string &AsmRef =
+        (TargetId == 0) ? GlobalScopeAsm : GlobalScopeAsms[TargetId - 1];
+
+    AsmRef = std::string(Asm);
+    if (!AsmRef.empty() && AsmRef.back() != '\n')
+      AsmRef += '\n';
+  }
+
   /// Append to the module-scope inline assembly blocks.
   /// A trailing newline is added if the input doesn't have one.
   void appendModuleInlineAsm(StringRef Asm) {
+    if (IsHeterogenousModule)
+      return appendModuleInlineAsm(Asm, ActiveTarget);
+
     GlobalScopeAsm += Asm;
     if (!GlobalScopeAsm.empty() && GlobalScopeAsm.back() != '\n')
       GlobalScopeAsm += '\n';
   }
 
-/// @}
-/// @name Generic Value Accessors
-/// @{
+  /// Append to the module-scope inline assembly blocks of TargetId-th target.
+  /// A trailing newline is added if the input doesn't have one.
+  void appendModuleInlineAsm(StringRef Asm, unsigned TargetId) {
+    std::string *AsmRef = &GlobalScopeAsm;
+    if (TargetId)
+      AsmRef = &GlobalScopeAsms[TargetId - 1];
+
+    *AsmRef += Asm;
+    if (!AsmRef->empty() && AsmRef->back() != '\n')
+      *AsmRef += '\n';
+  }
+
+  /// @}
+  /// @name Generic Value Accessors
+  /// @{
 
   /// Return the global value in the module with the specified name, of
   /// arbitrary type. This method returns null if a global with the specified
   /// name is not found.
   GlobalValue *getNamedValue(StringRef Name) const;
+  GlobalValue *getNamedValue(StringRef Name, unsigned TargetId) const;
 
   /// Return a unique non-zero ID for the specified metadata kind. This ID is
   /// uniqued across modules in the current LLVMContext.
@@ -331,9 +477,9 @@ public:
 
   std::vector<StructType *> getIdentifiedStructTypes() const;
 
-/// @}
-/// @name Function Accessors
-/// @{
+  /// @}
+  /// @name Function Accessors
+  /// @{
 
   /// Look up the specified function in the module symbol table. Four
   /// possibilities:
@@ -344,12 +490,18 @@ public:
   ///      function with a constantexpr cast to the right prototype.
   ///
   /// In all cases, the returned value is a FunctionCallee wrapper around the
-  /// 'FunctionType *T' passed in, as well as a 'Value*' either of the Function or
-  /// the bitcast to the function.
+  /// 'FunctionType *T' passed in, as well as a 'Value*' either of the Function
+  /// or the bitcast to the function.
   FunctionCallee getOrInsertFunction(StringRef Name, FunctionType *T,
                                      AttributeList AttributeList);
 
+  FunctionCallee getOrInsertFunction(StringRef Name, FunctionType *T,
+                                     AttributeList AttributeList,
+                                     unsigned TargetId);
+
   FunctionCallee getOrInsertFunction(StringRef Name, FunctionType *T);
+  FunctionCallee getOrInsertFunction(StringRef Name, FunctionType *T,
+                                     unsigned TargetId);
 
   /// Look up the specified function in the module symbol table. If it does not
   /// exist, add a prototype for the function and return it. This function
@@ -361,10 +513,18 @@ public:
   FunctionCallee getOrInsertFunction(StringRef Name,
                                      AttributeList AttributeList, Type *RetTy,
                                      ArgsTy... Args) {
-    SmallVector<Type*, sizeof...(ArgsTy)> ArgTys{Args...};
-    return getOrInsertFunction(Name,
-                               FunctionType::get(RetTy, ArgTys, false),
+    SmallVector<Type *, sizeof...(ArgsTy)> ArgTys{Args...};
+    return getOrInsertFunction(Name, FunctionType::get(RetTy, ArgTys, false),
                                AttributeList);
+  }
+
+  template <typename... ArgsTy>
+  FunctionCallee getOrInsertFunction(StringRef Name,
+                                     AttributeList AttributeList, Type *RetTy,
+                                     unsigned TargetId, ArgsTy... Args) {
+    SmallVector<Type *, sizeof...(ArgsTy)> ArgTys{Args...};
+    return getOrInsertFunction(Name, FunctionType::get(RetTy, ArgTys, false),
+                               AttributeList, TargetId);
   }
 
   /// Same as above, but without the attributes.
@@ -372,6 +532,12 @@ public:
   FunctionCallee getOrInsertFunction(StringRef Name, Type *RetTy,
                                      ArgsTy... Args) {
     return getOrInsertFunction(Name, AttributeList{}, RetTy, Args...);
+  }
+
+  template <typename... ArgsTy>
+  FunctionCallee getOrInsertFunction(StringRef Name, Type *RetTy,
+                                     unsigned TargetId, ArgsTy... Args) {
+    return getOrInsertFunction(Name, AttributeList{}, RetTy, TargetId, Args...);
   }
 
   // Avoid an incorrect ordering that'd otherwise compile incorrectly.
@@ -384,9 +550,11 @@ public:
   /// exist, return null.
   Function *getFunction(StringRef Name) const;
 
-/// @}
-/// @name Global Variable Accessors
-/// @{
+  Function *getFunction(StringRef Name, unsigned TargetId) const;
+
+  /// @}
+  /// @name Global Variable Accessors
+  /// @{
 
   /// Look up the specified global variable in the module symbol table. If it
   /// does not exist, return null. If AllowInternal is set to true, this
@@ -396,12 +564,25 @@ public:
     return getGlobalVariable(Name, false);
   }
 
+  GlobalVariable *getGlobalVariable(StringRef Name, unsigned TargetId) const {
+    return getGlobalVariable(Name, false, TargetId);
+  }
+
   GlobalVariable *getGlobalVariable(StringRef Name, bool AllowInternal) const;
+
+  GlobalVariable *getGlobalVariable(StringRef Name, bool AllowInternal,
+                                    unsigned TargetId) const;
 
   GlobalVariable *getGlobalVariable(StringRef Name,
                                     bool AllowInternal = false) {
     return static_cast<const Module *>(this)->getGlobalVariable(Name,
                                                                 AllowInternal);
+  }
+
+  GlobalVariable *getGlobalVariable(StringRef Name, unsigned TargetId,
+                                    bool AllowInternal = false) {
+    return static_cast<const Module *>(this)->getGlobalVariable(
+        Name, AllowInternal, TargetId);
   }
 
   /// Return the global variable in the module with the specified name, of
@@ -410,9 +591,17 @@ public:
   const GlobalVariable *getNamedGlobal(StringRef Name) const {
     return getGlobalVariable(Name, true);
   }
+  const GlobalVariable *getNamedGlobal(StringRef Name,
+                                       unsigned TargetId) const {
+    return getGlobalVariable(Name, TargetId, true);
+  }
   GlobalVariable *getNamedGlobal(StringRef Name) {
     return const_cast<GlobalVariable *>(
-                       static_cast<const Module *>(this)->getNamedGlobal(Name));
+        static_cast<const Module *>(this)->getNamedGlobal(Name));
+  }
+  GlobalVariable *getNamedGlobal(StringRef Name, unsigned TargetId) {
+    return const_cast<GlobalVariable *>(
+        static_cast<const Module *>(this)->getNamedGlobal(Name, TargetId));
   }
 
   /// Look up the specified global in the module symbol table.
@@ -422,32 +611,39 @@ public:
   Constant *
   getOrInsertGlobal(StringRef Name, Type *Ty,
                     function_ref<GlobalVariable *()> CreateGlobalCallback);
+  Constant *
+  getOrInsertGlobal(StringRef Name, Type *Ty,
+                    function_ref<GlobalVariable *()> CreateGlobalCallback,
+                    unsigned TargetId);
 
   /// Look up the specified global in the module symbol table. If required, this
   /// overload constructs the global variable using its constructor's defaults.
   Constant *getOrInsertGlobal(StringRef Name, Type *Ty);
+  Constant *getOrInsertGlobal(StringRef Name, Type *Ty, unsigned TargetId);
 
-/// @}
-/// @name Global Alias Accessors
-/// @{
+  /// @}
+  /// @name Global Alias Accessors
+  /// @{
 
   /// Return the global alias in the module with the specified name, of
   /// arbitrary type. This method returns null if a global with the specified
   /// name is not found.
   GlobalAlias *getNamedAlias(StringRef Name) const;
+  GlobalAlias *getNamedAlias(StringRef Name, unsigned TargetId) const;
 
-/// @}
-/// @name Global IFunc Accessors
-/// @{
+  /// @}
+  /// @name Global IFunc Accessors
+  /// @{
 
   /// Return the global ifunc in the module with the specified name, of
   /// arbitrary type. This method returns null if a global with the specified
   /// name is not found.
   GlobalIFunc *getNamedIFunc(StringRef Name) const;
+  GlobalIFunc *getNamedIFunc(StringRef Name, unsigned TargetId) const;
 
-/// @}
-/// @name Named Metadata Accessors
-/// @{
+  /// @}
+  /// @name Named Metadata Accessors
+  /// @{
 
   /// Return the first NamedMDNode in the module with the specified name. This
   /// method returns null if a NamedMDNode with the specified name is not found.
@@ -461,17 +657,18 @@ public:
   /// Remove the given NamedMDNode from this module and delete it.
   void eraseNamedMetadata(NamedMDNode *NMD);
 
-/// @}
-/// @name Comdat Accessors
-/// @{
+  /// @}
+  /// @name Comdat Accessors
+  /// @{
 
   /// Return the Comdat in the module with the specified name. It is created
   /// if it didn't already exist.
   Comdat *getOrInsertComdat(StringRef Name);
+  Comdat *getOrInsertComdat(StringRef Name, unsigned TargetId);
 
-/// @}
-/// @name Module Flags Accessors
-/// @{
+  /// @}
+  /// @name Module Flags Accessors
+  /// @{
 
   /// Returns the module flags in the provided vector.
   void getModuleFlagsMetadata(SmallVectorImpl<ModuleFlagEntry> &Flags) const;
@@ -523,74 +720,74 @@ public:
 
   llvm::Error materializeMetadata();
 
-/// @}
-/// @name Direct access to the globals list, functions list, and symbol table
-/// @{
+  /// @}
+  /// @name Direct access to the globals list, functions list, and symbol table
+  /// @{
 
   /// Get the Module's list of global variables (constant).
-  const GlobalListType   &getGlobalList() const       { return GlobalList; }
+  const GlobalListType &getGlobalList() const { return GlobalList; }
   /// Get the Module's list of global variables.
-  GlobalListType         &getGlobalList()             { return GlobalList; }
+  GlobalListType &getGlobalList() { return GlobalList; }
 
-  static GlobalListType Module::*getSublistAccess(GlobalVariable*) {
+  static GlobalListType Module::*getSublistAccess(GlobalVariable *) {
     return &Module::GlobalList;
   }
 
   /// Get the Module's list of functions (constant).
-  const FunctionListType &getFunctionList() const     { return FunctionList; }
+  const FunctionListType &getFunctionList() const { return FunctionList; }
   /// Get the Module's list of functions.
-  FunctionListType       &getFunctionList()           { return FunctionList; }
-  static FunctionListType Module::*getSublistAccess(Function*) {
+  FunctionListType &getFunctionList() { return FunctionList; }
+  static FunctionListType Module::*getSublistAccess(Function *) {
     return &Module::FunctionList;
   }
 
   /// Get the Module's list of aliases (constant).
-  const AliasListType    &getAliasList() const        { return AliasList; }
+  const AliasListType &getAliasList() const { return AliasList; }
   /// Get the Module's list of aliases.
-  AliasListType          &getAliasList()              { return AliasList; }
+  AliasListType &getAliasList() { return AliasList; }
 
-  static AliasListType Module::*getSublistAccess(GlobalAlias*) {
+  static AliasListType Module::*getSublistAccess(GlobalAlias *) {
     return &Module::AliasList;
   }
 
   /// Get the Module's list of ifuncs (constant).
-  const IFuncListType    &getIFuncList() const        { return IFuncList; }
+  const IFuncListType &getIFuncList() const { return IFuncList; }
   /// Get the Module's list of ifuncs.
-  IFuncListType          &getIFuncList()              { return IFuncList; }
+  IFuncListType &getIFuncList() { return IFuncList; }
 
-  static IFuncListType Module::*getSublistAccess(GlobalIFunc*) {
+  static IFuncListType Module::*getSublistAccess(GlobalIFunc *) {
     return &Module::IFuncList;
   }
 
   /// Get the Module's list of named metadata (constant).
-  const NamedMDListType  &getNamedMDList() const      { return NamedMDList; }
+  const NamedMDListType &getNamedMDList() const { return NamedMDList; }
   /// Get the Module's list of named metadata.
-  NamedMDListType        &getNamedMDList()            { return NamedMDList; }
+  NamedMDListType &getNamedMDList() { return NamedMDList; }
 
-  static NamedMDListType Module::*getSublistAccess(NamedMDNode*) {
+  static NamedMDListType Module::*getSublistAccess(NamedMDNode *) {
     return &Module::NamedMDList;
   }
 
   /// Get the symbol table of global variable and function identifiers
   const ValueSymbolTable &getValueSymbolTable() const { return *ValSymTab; }
   /// Get the Module's symbol table of global variable and function identifiers.
-  ValueSymbolTable       &getValueSymbolTable()       { return *ValSymTab; }
+  ValueSymbolTable &getValueSymbolTable() { return *ValSymTab; }
 
   /// Get the Module's symbol table for COMDATs (constant).
   const ComdatSymTabType &getComdatSymbolTable() const { return ComdatSymTab; }
   /// Get the Module's symbol table for COMDATs.
   ComdatSymTabType &getComdatSymbolTable() { return ComdatSymTab; }
 
-/// @}
-/// @name Global Variable Iteration
-/// @{
+  /// @}
+  /// @name Global Variable Iteration
+  /// @{
 
-  global_iterator       global_begin()       { return GlobalList.begin(); }
+  global_iterator global_begin() { return GlobalList.begin(); }
   const_global_iterator global_begin() const { return GlobalList.begin(); }
-  global_iterator       global_end  ()       { return GlobalList.end(); }
-  const_global_iterator global_end  () const { return GlobalList.end(); }
-  size_t                global_size () const { return GlobalList.size(); }
-  bool                  global_empty() const { return GlobalList.empty(); }
+  global_iterator global_end() { return GlobalList.end(); }
+  const_global_iterator global_end() const { return GlobalList.end(); }
+  size_t global_size() const { return GlobalList.size(); }
+  bool global_empty() const { return GlobalList.empty(); }
 
   iterator_range<global_iterator> globals() {
     return make_range(global_begin(), global_end());
@@ -599,38 +796,36 @@ public:
     return make_range(global_begin(), global_end());
   }
 
-/// @}
-/// @name Function Iteration
-/// @{
+  /// @}
+  /// @name Function Iteration
+  /// @{
 
-  iterator                begin()       { return FunctionList.begin(); }
-  const_iterator          begin() const { return FunctionList.begin(); }
-  iterator                end  ()       { return FunctionList.end();   }
-  const_iterator          end  () const { return FunctionList.end();   }
-  reverse_iterator        rbegin()      { return FunctionList.rbegin(); }
-  const_reverse_iterator  rbegin() const{ return FunctionList.rbegin(); }
-  reverse_iterator        rend()        { return FunctionList.rend(); }
-  const_reverse_iterator  rend() const  { return FunctionList.rend(); }
-  size_t                  size() const  { return FunctionList.size(); }
-  bool                    empty() const { return FunctionList.empty(); }
+  iterator begin() { return FunctionList.begin(); }
+  const_iterator begin() const { return FunctionList.begin(); }
+  iterator end() { return FunctionList.end(); }
+  const_iterator end() const { return FunctionList.end(); }
+  reverse_iterator rbegin() { return FunctionList.rbegin(); }
+  const_reverse_iterator rbegin() const { return FunctionList.rbegin(); }
+  reverse_iterator rend() { return FunctionList.rend(); }
+  const_reverse_iterator rend() const { return FunctionList.rend(); }
+  size_t size() const { return FunctionList.size(); }
+  bool empty() const { return FunctionList.empty(); }
 
-  iterator_range<iterator> functions() {
-    return make_range(begin(), end());
-  }
+  iterator_range<iterator> functions() { return make_range(begin(), end()); }
   iterator_range<const_iterator> functions() const {
     return make_range(begin(), end());
   }
 
-/// @}
-/// @name Alias Iteration
-/// @{
+  /// @}
+  /// @name Alias Iteration
+  /// @{
 
-  alias_iterator       alias_begin()            { return AliasList.begin(); }
-  const_alias_iterator alias_begin() const      { return AliasList.begin(); }
-  alias_iterator       alias_end  ()            { return AliasList.end();   }
-  const_alias_iterator alias_end  () const      { return AliasList.end();   }
-  size_t               alias_size () const      { return AliasList.size();  }
-  bool                 alias_empty() const      { return AliasList.empty(); }
+  alias_iterator alias_begin() { return AliasList.begin(); }
+  const_alias_iterator alias_begin() const { return AliasList.begin(); }
+  alias_iterator alias_end() { return AliasList.end(); }
+  const_alias_iterator alias_end() const { return AliasList.end(); }
+  size_t alias_size() const { return AliasList.size(); }
+  bool alias_empty() const { return AliasList.empty(); }
 
   iterator_range<alias_iterator> aliases() {
     return make_range(alias_begin(), alias_end());
@@ -639,16 +834,16 @@ public:
     return make_range(alias_begin(), alias_end());
   }
 
-/// @}
-/// @name IFunc Iteration
-/// @{
+  /// @}
+  /// @name IFunc Iteration
+  /// @{
 
-  ifunc_iterator       ifunc_begin()            { return IFuncList.begin(); }
-  const_ifunc_iterator ifunc_begin() const      { return IFuncList.begin(); }
-  ifunc_iterator       ifunc_end  ()            { return IFuncList.end();   }
-  const_ifunc_iterator ifunc_end  () const      { return IFuncList.end();   }
-  size_t               ifunc_size () const      { return IFuncList.size();  }
-  bool                 ifunc_empty() const      { return IFuncList.empty(); }
+  ifunc_iterator ifunc_begin() { return IFuncList.begin(); }
+  const_ifunc_iterator ifunc_begin() const { return IFuncList.begin(); }
+  ifunc_iterator ifunc_end() { return IFuncList.end(); }
+  const_ifunc_iterator ifunc_end() const { return IFuncList.end(); }
+  size_t ifunc_size() const { return IFuncList.size(); }
+  bool ifunc_empty() const { return IFuncList.empty(); }
 
   iterator_range<ifunc_iterator> ifuncs() {
     return make_range(ifunc_begin(), ifunc_end());
@@ -694,7 +889,7 @@ public:
     return NamedMDList.end();
   }
 
-  size_t named_metadata_size() const { return NamedMDList.size();  }
+  size_t named_metadata_size() const { return NamedMDList.size(); }
   bool named_metadata_empty() const { return NamedMDList.empty(); }
 
   iterator_range<named_metadata_iterator> named_metadata() {
@@ -761,7 +956,7 @@ public:
         debug_compile_units_iterator(CUs, 0),
         debug_compile_units_iterator(CUs, CUs ? CUs->getNumOperands() : 0));
   }
-/// @}
+  /// @}
 
   /// Destroy ConstantArrays in LLVMContext if they are not used.
   /// ConstantArrays constructed during linking can cause quadratic memory
@@ -772,8 +967,8 @@ public:
   /// be called where all uses of the LLVMContext are understood.
   void dropTriviallyDeadConstantArrays();
 
-/// @name Utility functions for printing and dumping Module objects
-/// @{
+  /// @name Utility functions for printing and dumping Module objects
+  /// @{
 
   /// Print the module to an output stream with an optional
   /// AssemblyAnnotationWriter.  If \c ShouldPreserveUseListOrder, then include
@@ -794,9 +989,9 @@ public:
   /// that has "dropped all references", except operator delete.
   void dropAllReferences();
 
-/// @}
-/// @name Utility functions for querying Debug information.
-/// @{
+  /// @}
+  /// @name Utility functions for querying Debug information.
+  /// @{
 
   /// Returns the Number of Register ParametersDwarf Version by checking
   /// module flags.
@@ -812,27 +1007,27 @@ public:
   /// Returns zero if not present in module.
   unsigned getCodeViewFlag() const;
 
-/// @}
-/// @name Utility functions for querying and setting PIC level
-/// @{
+  /// @}
+  /// @name Utility functions for querying and setting PIC level
+  /// @{
 
   /// Returns the PIC level (small or large model)
   PICLevel::Level getPICLevel() const;
 
   /// Set the PIC level (small or large model)
   void setPICLevel(PICLevel::Level PL);
-/// @}
+  /// @}
 
-/// @}
-/// @name Utility functions for querying and setting PIE level
-/// @{
+  /// @}
+  /// @name Utility functions for querying and setting PIE level
+  /// @{
 
   /// Returns the PIE level (small or large model)
   PIELevel::Level getPIELevel() const;
 
   /// Set the PIE level (small or large model)
   void setPIELevel(PIELevel::Level PL);
-/// @}
+  /// @}
 
   /// @}
   /// @name Utility function for querying and setting code model
@@ -886,6 +1081,26 @@ public:
   /// Set the partial sample profile ratio in the profile summary module flag,
   /// if applicable.
   void setPartialSampleProfileRatio(const ModuleSummaryIndex &Index);
+  /// @}
+
+  /// @name Utility functions for heterogenous module
+  /// @{
+  /// Get the number of targets this module contains
+  unsigned getNumTargets() const { return NumTargets; }
+
+  /// Set the number of targets this module can cantain
+  void setNumTargets(unsigned Num) {
+    assert(IsHeterogenousModule &&
+           "This function can only be called when the module is heterogenous");
+    assert(Num <= LLVM_MODULE_NUM_TARGETS && "");
+    NumTargets = Num;
+  }
+
+  /// Set the active target id
+  void setActiveTarget(unsigned TargetId) { ActiveTarget = TargetId; }
+
+  /// Get the active target id
+  unsigned getActiveTarget() const { return ActiveTarget; }
 };
 
 /// Given "llvm.used" or "llvm.compiler.used" as a global name, collect the
@@ -908,8 +1123,49 @@ DEFINE_SIMPLE_CONVERSION_FUNCTIONS(Module, LLVMModuleRef)
  * Module.
  */
 inline Module *unwrap(LLVMModuleProviderRef MP) {
-  return reinterpret_cast<Module*>(MP);
+  return reinterpret_cast<Module *>(MP);
 }
+
+namespace heterogenous {
+/// Check if a given global name is a mangled name for heterogenous module.
+inline bool isMangledName(StringRef Name) {
+  return Name.startswith("[target]");
+}
+
+/// Check if a given global name is an internal function, e.g. llvm.*.
+inline bool isInternalName(StringRef Name) {
+  return Name.startswith("llvm.") || Name.startswith("nvvm.");
+}
+
+/// Return true if the Value needs to be mangled (renamed) when merged to a
+/// heterogenous module.
+inline bool isMangleNeeded(const llvm::Value *V) {
+  return !(isInternalName(V->getName()));
+}
+
+/// Mangle a name to a heterogenous name.
+inline std::string mangleName(StringRef Name, unsigned TargetId) {
+  return "[target][" + std::to_string(TargetId) + "]" + std::string(Name);
+}
+
+/// Demangle a name, and return a pair of target id and the original name.
+inline std::pair<unsigned, StringRef> demangleName(StringRef Name) {
+  assert(isMangledName(Name) && "Name should be mangled");
+  assert(Name[8] == '[' && "Unrecognized mangling");
+
+  unsigned I = 9;
+  unsigned Id = 0;
+  while (Name[I] != ']') {
+    assert(isdigit(Name[I]) && "Unrecognized mangling");
+    Id = Id * 10 + Name[I] - '0';
+    ++I;
+  }
+
+  assert(Id < LLVM_MODULE_NUM_TARGETS && "Id is larger than maximum value");
+
+  return std::make_pair(Id, Name.substr(I + 1));
+}
+} // namespace heterogenous
 
 } // end namespace llvm
 

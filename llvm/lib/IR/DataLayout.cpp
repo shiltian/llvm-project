@@ -27,6 +27,7 @@
 #include "llvm/IR/Type.h"
 #include "llvm/IR/Value.h"
 #include "llvm/Support/Casting.h"
+#include "llvm/Support/Debug.h"
 #include "llvm/Support/Error.h"
 #include "llvm/Support/ErrorHandling.h"
 #include "llvm/Support/MathExtras.h"
@@ -37,6 +38,8 @@
 #include <cstdlib>
 #include <tuple>
 #include <utility>
+
+#define DEBUG_TYPE "data-layout"
 
 using namespace llvm;
 
@@ -545,6 +548,51 @@ bool DataLayout::operator==(const DataLayout &Other) const {
              Alignments == Other.Alignments && Pointers == Other.Pointers;
   // Note: getStringRepresentation() might differs, it is not canonicalized
   return Ret;
+}
+
+bool DataLayout::isCompatibleWith(const DataLayout &Other) const {
+  if (*this == Other)
+    return true;
+
+  bool Partial = BigEndian == Other.BigEndian;
+
+  if (StackNaturalAlign.hasValue() && Other.StackNaturalAlign.hasValue())
+    Partial = Partial && (StackNaturalAlign.getValue() ==
+                          Other.StackNaturalAlign.getValue());
+
+  if (FunctionPtrAlign.hasValue() && Other.FunctionPtrAlign.hasValue())
+    Partial = Partial && (FunctionPtrAlign.getValue() ==
+                          Other.FunctionPtrAlign.getValue());
+
+  if (!Partial)
+    return false;
+
+  // Compare the two Alignments. Suppose they're stored w/o any order (O(n^2)).
+  // Otherwise, this procedure can be optimized to O(n).
+  for (auto I = Alignments.begin(); I != Alignments.end(); ++I) {
+    for (auto J = Other.Alignments.begin(); J != Other.Alignments.end(); ++J) {
+      if (I->AlignType != J->AlignType || I->TypeBitWidth != J->TypeBitWidth)
+        continue;
+
+      // TODO: Do we care about preferred size vs ABI size, or both?
+      if (!(*I == *J))
+        return false;
+    }
+  }
+
+  // Compare pointers. Like before, suppose they're not ordered.
+  for (auto I = Pointers.begin(); I != Pointers.end(); ++I) {
+    for (auto J = Other.Pointers.begin(); J != Other.Pointers.end(); ++J) {
+      if (I->AddressSpace != J->AddressSpace)
+        continue;
+
+      // TODO: Similar question as above
+      if (!(*I == *J))
+        return false;
+    }
+  }
+
+  return true;
 }
 
 DataLayout::AlignmentsTy::iterator

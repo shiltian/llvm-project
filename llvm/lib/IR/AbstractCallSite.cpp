@@ -98,17 +98,41 @@ AbstractCallSite::AbstractCallSite(const Use *U)
     return;
   }
 
-  unsigned UseIdx = CB->getArgOperandNo(U);
   MDNode *CallbackEncMD = nullptr;
-  for (const MDOperand &Op : CallbackMD->operands()) {
+
+  auto GetCBCalleeIdx = [](const MDOperand &Op) {
     MDNode *OpMD = cast<MDNode>(Op.get());
     auto *CBCalleeIdxAsCM = cast<ConstantAsMetadata>(OpMD->getOperand(0));
-    uint64_t CBCalleeIdx =
-        cast<ConstantInt>(CBCalleeIdxAsCM->getValue())->getZExtValue();
-    if (CBCalleeIdx != UseIdx)
-      continue;
-    CallbackEncMD = OpMD;
-    break;
+    return cast<ConstantInt>(CBCalleeIdxAsCM->getValue())->getZExtValue();
+  };
+
+  if (CB->isBundleOperand(U)) {
+    // If the Use is a bundle operand, we're constructing a callsite for
+    // heterogenous callback.
+    for (const MDOperand &Op : CallbackMD->operands()) {
+      uint64_t CBCalleeIdx = GetCBCalleeIdx(Op);
+      assert(CBCalleeIdx < CB->getNumArgOperands());
+      llvm::Value *CBCallee = CB->getOperand(CBCalleeIdx);
+      // We suppose the callback functions are stored in operand bundles with
+      // name same as the callback global variable.
+      auto OpBundleOption = CB->getOperandBundle(CBCallee->getName());
+      if (!OpBundleOption)
+        continue;
+      if (OpBundleOption->isUseInBundle(U)) {
+        CallbackEncMD = cast<MDNode>(Op.get());
+        break;
+      }
+    }
+  } else {
+    unsigned UseIdx = CB->getArgOperandNo(U);
+    for (const MDOperand &Op : CallbackMD->operands()) {
+      uint64_t CBCalleeIdx = GetCBCalleeIdx(Op);
+      assert(CBCalleeIdx < CB->getNumArgOperands());
+      if (CBCalleeIdx != UseIdx)
+        continue;
+      CallbackEncMD = cast<MDNode>(Op.get());
+      break;
+    }
   }
 
   if (!CallbackEncMD) {
@@ -148,7 +172,10 @@ AbstractCallSite::AbstractCallSite(const Use *U)
   if (VarArgFlagAsCM->getValue()->isNullValue())
     return;
 
-  // Add all variadic arguments at the end.
+  // Add all variadic arguments
   for (unsigned u = Callee->arg_size(); u < NumCallOperands; u++)
     CI.ParameterEncoding.push_back(u);
+
+  // Add the operand number of the Use at the end
+  CI.ParameterEncoding.push_back(U->getOperandNo());
 }
