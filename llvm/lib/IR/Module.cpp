@@ -74,7 +74,10 @@ template class llvm::SymbolTableListTraits<GlobalIFunc>;
 Module::Module(StringRef MID, LLVMContext &C)
     : Context(C), ValSymTab(std::make_unique<ValueSymbolTable>(-1)),
       Materializer(), ModuleID(std::string(MID)),
-      SourceFileName(std::string(MID)), DL("") {
+      SourceFileName(std::string(MID)) {
+  GlobalScopeAsms.resize(LLVM_MODULE_NUM_TARGETS, "");
+  TargetTriples.resize(LLVM_MODULE_NUM_TARGETS, "");
+  DLs.resize(LLVM_MODULE_NUM_TARGETS, DataLayout(""));
   Context.addModule(this);
 }
 
@@ -151,7 +154,7 @@ FunctionCallee Module::getOrInsertFunction(StringRef Name, FunctionType *Ty,
   if (!F) {
     // Nope, add it
     Function *New = Function::Create(Ty, GlobalVariable::ExternalLinkage,
-                                     DL.getProgramAddressSpace(), Name);
+                                     DLs[0].getProgramAddressSpace(), Name);
     if (!New->isIntrinsic())       // Intrinsics get attrs set on construction
       New->setAttributes(AttributeList);
     FunctionList.push_back(New);
@@ -392,13 +395,20 @@ void Module::setModuleFlag(ModFlagBehavior Behavior, StringRef Key,
   addModuleFlag(Behavior, Key, Val);
 }
 
-void Module::setDataLayout(StringRef Desc) {
-  DL.reset(Desc);
+void Module::setDataLayout(unsigned TargetId, StringRef Desc) {
+  assert(TargetId < LLVM_MODULE_NUM_TARGETS && "TargetId is out of range");
+  DLs[TargetId].reset(Desc);
 }
 
-void Module::setDataLayout(const DataLayout &Other) { DL = Other; }
+void Module::setDataLayout(unsigned TargetId, const DataLayout &Other) {
+  assert(TargetId < LLVM_MODULE_NUM_TARGETS && "TargetId is out of range");
+  DLs[TargetId] = Other;
+}
 
-const DataLayout &Module::getDataLayout() const { return DL; }
+const DataLayout &Module::getDataLayout(unsigned TargetId) const {
+  assert(TargetId < LLVM_MODULE_NUM_TARGETS && "TargetId is out of range");
+  return DLs[TargetId];
+}
 
 DICompileUnit *Module::debug_compile_units_iterator::operator*() const {
   return cast<DICompileUnit>(CUs->getOperand(Idx));

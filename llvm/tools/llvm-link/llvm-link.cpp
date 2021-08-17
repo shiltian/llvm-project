@@ -124,6 +124,11 @@ static cl::opt<bool> NoVerify("disable-verify",
                               cl::desc("Do not run the verifier"), cl::Hidden,
                               cl::cat(LinkCategory));
 
+static cl::opt<bool>
+    HeterogenousIRModule("heterogenous-ir-module",
+                         cl::desc("Enable heterogenous IR module"), cl::Hidden,
+                         cl::cat(LinkCategory));
+
 static ExitOnError ExitOnErr;
 
 // Read the specified bitcode file in and return it. This routine searches the
@@ -454,6 +459,8 @@ int main(int argc, char **argv) {
     Context.enableDebugTypeODRUniquing();
 
   auto Composite = std::make_unique<Module>("llvm-link", Context);
+  if (HeterogenousIRModule)
+    Composite->setHeterogenousIRModule(true);
   Linker L(*Composite);
 
   unsigned Flags = Linker::Flags::None;

@@ -182,7 +182,8 @@ private:
   AliasListType AliasList;        ///< The Aliases in the module
   IFuncListType IFuncList;        ///< The IFuncs in the module
   NamedMDListType NamedMDList;    ///< The named metadata in the module
-  std::string GlobalScopeAsm;     ///< Inline Asm at global scope.
+  SmallVector<std::string, LLVM_MODULE_NUM_TARGETS>
+      GlobalScopeAsms;            ///< Inline Asm at global scope.
   std::unique_ptr<ValueSymbolTable> ValSymTab; ///< Symbol table for values
   ComdatSymTabType ComdatSymTab;  ///< Symbol table for COMDATs
   std::unique_ptr<MemoryBuffer>
@@ -193,10 +194,12 @@ private:
   std::string ModuleID;           ///< Human readable identifier for the module
   std::string SourceFileName;     ///< Original source file name for module,
                                   ///< recorded in bitcode.
-  std::string TargetTriple;       ///< Platform target triple Module compiled on
+  SmallVector<std::string, LLVM_MODULE_NUM_TARGETS>
+      TargetTriples;              ///< Platform target triple Module compiled on
                                   ///< Format: (arch)(sub)-(vendor)-(sys0-(abi)
   NamedMDSymTabType NamedMDSymTab;  ///< NamedMDNode names.
-  DataLayout DL;                  ///< DataLayout associated with the module
+  SmallVector<DataLayout, LLVM_MODULE_NUM_TARGETS>
+      DLs;                        ///< DataLayout associated with the module
   StringMap<unsigned>
       CurrentIntrinsicIds; ///< Keep track of the current unique id count for
                            ///< the specified intrinsic basename.
@@ -205,6 +208,9 @@ private:
                              ///< based on unnamed types. The combination of
                              ///< ID and FunctionType maps to the extension that
                              ///< is used to make the intrinsic name unique.
+  bool HeterogenousIRModule; ///< If the module is heterogenous IR module.
+  unsigned NumTargets;       ///< Number of targets in the module if the module
+                             ///< is heterogenous IR module.
 
   friend class Constant;
 
@@ -245,16 +251,23 @@ public:
 
   /// Get the data layout string for the module's target platform. This is
   /// equivalent to getDataLayout()->getStringRepresentation().
-  const std::string &getDataLayoutStr() const {
-    return DL.getStringRepresentation();
+  const std::string &getDataLayoutStr() const { return getDataLayoutStr(0); }
+  const std::string &getDataLayoutStr(unsigned TargetId) const {
+    assert(TargetId < LLVM_MODULE_NUM_TARGETS && "TargetId is out of range");
+    return DLs[TargetId].getStringRepresentation();
   }
 
   /// Get the data layout for the module's target platform.
-  const DataLayout &getDataLayout() const;
+  const DataLayout &getDataLayout() const { return getDataLayout(0); }
+  const DataLayout &getDataLayout(unsigned TargetId) const;
 
   /// Get the target triple which is a string describing the target host.
   /// @returns a string containing the target triple.
-  const std::string &getTargetTriple() const { return TargetTriple; }
+  const std::string &getTargetTriple() const { return getTargetTriple(0); }
+  const std::string &getTargetTriple(unsigned TargetId) const {
+    assert(TargetId < LLVM_MODULE_NUM_TARGETS && "TargetId is out of range");
+    return TargetTriples[TargetId];
+  }
 
   /// Get the global data context.
   /// @returns LLVMContext - a container for LLVM's global information
@@ -262,7 +275,13 @@ public:
 
   /// Get any module-scope inline assembly blocks.
   /// @returns a string containing the module-scope inline assembly blocks.
-  const std::string &getModuleInlineAsm() const { return GlobalScopeAsm; }
+  const std::string &getModuleInlineAsm() const {
+    return getModuleInlineAsm(0);
+  }
+  const std::string &getModuleInlineAsm(unsigned TargetId) const {
+    assert(TargetId < LLVM_MODULE_NUM_TARGETS && "TargetId is out of range");
+    return GlobalScopeAsms[TargetId];
+  }
 
   /// Get a RandomNumberGenerator salted for use with this module. The
   /// RNG can be seeded via -rng-seed=<uint64> and is salted with the
@@ -293,15 +312,30 @@ public:
   void setSourceFileName(StringRef Name) { SourceFileName = std::string(Name); }
 
   /// Set the data layout
-  void setDataLayout(StringRef Desc);
-  void setDataLayout(const DataLayout &Other);
+  void setDataLayout(StringRef Desc) {
+    setDataLayout(0, Desc);
+  }
+  void setDataLayout(const DataLayout &Other) {
+    setDataLayout(0, Other);
+  }
+  void setDataLayout(unsigned TargetId, StringRef Desc);
+  void setDataLayout(unsigned TargetId, const DataLayout &Other);
 
   /// Set the target triple.
-  void setTargetTriple(StringRef T) { TargetTriple = std::string(T); }
+  void setTargetTriple(StringRef T) { setTargetTriple(0, T); }
+  void setTargetTriple(unsigned TargetId, StringRef T) {
+    assert(TargetId < LLVM_MODULE_NUM_TARGETS && "TargetId is out of range");
+    TargetTriples[TargetId] = std::string(T);
+  }
 
   /// Set the module-scope inline assembly blocks.
   /// A trailing newline is added if the input doesn't have one.
   void setModuleInlineAsm(StringRef Asm) {
+    setModuleInlineAsm(0, Asm);
+  }
+  void setModuleInlineAsm(unsigned TargetId, StringRef Asm) {
+    assert(TargetId < LLVM_MODULE_NUM_TARGETS && "TargetId is out of range");
+    std::string &GlobalScopeAsm = GlobalScopeAsms[TargetId];
     GlobalScopeAsm = std::string(Asm);
     if (!GlobalScopeAsm.empty() && GlobalScopeAsm.back() != '\n')
       GlobalScopeAsm += '\n';
@@ -309,11 +343,23 @@ public:
 
   /// Append to the module-scope inline assembly blocks.
   /// A trailing newline is added if the input doesn't have one.
-  void appendModuleInlineAsm(StringRef Asm) {
+  void appendModuleInlineAsm(StringRef Asm) { appendModuleInlineAsm(0, Asm); }
+  void appendModuleInlineAsm(unsigned TargetId, StringRef Asm) {
+    assert(TargetId < LLVM_MODULE_NUM_TARGETS && "TargetId is out of range");
+    std::string &GlobalScopeAsm = GlobalScopeAsms[TargetId];
     GlobalScopeAsm += Asm;
     if (!GlobalScopeAsm.empty() && GlobalScopeAsm.back() != '\n')
       GlobalScopeAsm += '\n';
   }
+
+  /// Set the indicator if the module is heterogenous IR module.
+  void setHeterogenousIRModule(bool Value) { HeterogenousIRModule = Value; }
+
+  /// Return true if the module is heterogenous IR module.
+  bool isHeterogenousIRModule() const { return HeterogenousIRModule; }
+
+  /// Return the number of targets stored in the module.
+  unsigned getNumTargets() const { return NumTargets; }
 
 /// @}
 /// @name Generic Value Accessors

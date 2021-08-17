@@ -103,5 +103,7 @@
 /* Whether Timers signpost passes in Xcode Instruments */
 #cmakedefine01 LLVM_SUPPORT_XCODE_SIGNPOSTS
 
+/* Define the number of targets that a heterogenous module can support */
+ #cmakedefine LLVM_MODULE_NUM_TARGETS ${LLVM_MODULE_NUM_TARGETS}
 
 #endif
