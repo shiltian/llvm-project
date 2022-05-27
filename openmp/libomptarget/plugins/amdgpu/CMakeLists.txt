@@ -57,7 +57,7 @@ else()
   set(LIBOMPTARGET_DEP_LIBRARIES)
 endif()
 
-add_library(omptarget.rtl.amdgpu SHARED
+add_llvm_library(omptarget.rtl.amdgpu SHARED
       impl/impl.cpp
       impl/interop_hsa.cpp
       impl/data.cpp
@@ -100,6 +100,7 @@ target_link_libraries(
   ${OPENMP_PTHREAD_LIB}
   "-Wl,--version-script=${CMAKE_CURRENT_SOURCE_DIR}/../exports"
   ${LDFLAGS_UNDEFINED}
+  LLVM-LIBOMPTARGET-JIT
   )
 
 # in case of amdgcn, skip running tests if amdgpu-arch was not built or fails

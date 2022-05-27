@@ -98,6 +98,7 @@ struct LTOCodeGenerator {
 
   void setCpu(StringRef MCpu) { Config.CPU = std::string(MCpu); }
   void setAttrs(std::vector<std::string> MAttrs) { Config.MAttrs = MAttrs; }
+  void setUseDefaultPipeline(bool Value) { Config.UseDefaultPipeline = Value; }
   void setOptLevel(unsigned OptLevel);
 
   void setShouldInternalize(bool Value) { ShouldInternalize = Value; }
@@ -192,6 +193,8 @@ struct LTOCodeGenerator {
 
   void resetMergedModule() { MergedModule.reset(); }
   void DiagnosticHandler(const DiagnosticInfo &DI);
+
+  Module &getMergedModule() const { return *MergedModule; }
 
 private:
   /// Verify the merged module on first call.

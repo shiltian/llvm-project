@@ -37,17 +37,38 @@ if (LIBOMPTARGET_DEP_CUDA_FOUND AND LIBOMPTARGET_DEP_CUDA_DRIVER_FOUND)
   set(LIBOMPTARGET_CAN_LINK_LIBCUDA TRUE)
 endif()
 
+set(LLVM_LINK_COMPONENTS
+  AllTargetsAsmParsers
+  AllTargetsCodeGens
+  AllTargetsDescs
+  AllTargetsInfos
+  LTO
+)
+
+set(src_files src/rtl.cpp)
+
 if (LIBOMPTARGET_CAN_LINK_LIBCUDA AND NOT LIBOMPTARGET_FORCE_DLOPEN_LIBCUDA)
   libomptarget_say("Building CUDA plugin linked against libcuda")
   include_directories(${LIBOMPTARGET_DEP_CUDA_INCLUDE_DIRS})
-  add_library(omptarget.rtl.cuda SHARED src/rtl.cpp)
-  set (LIBOMPTARGET_DEP_LIBRARIES ${LIBOMPTARGET_DEP_CUDA_DRIVER_LIBRARIES})
+  set(dependences ${LIBOMPTARGET_DEP_CUDA_DRIVER_LIBRARIES})
 else()
   libomptarget_say("Building CUDA plugin for dlopened libcuda")
   include_directories(dynamic_cuda)
-  add_library(omptarget.rtl.cuda SHARED src/rtl.cpp dynamic_cuda/cuda.cpp)
-  set (LIBOMPTARGET_DEP_LIBRARIES ${CMAKE_DL_LIBS})
+  list(APPEND src_files dynamic_cuda/cuda.cpp)
+  set(dependences ${CMAKE_DL_LIBS})
 endif()
+
+add_llvm_library(omptarget.rtl.cuda SHARED ${src_files}
+  LINK_LIBS elf_common
+            MemoryManager
+            ${LIBOMPTARGET_DEP_LIBRARIES}
+            ${LIBOMPTARGET_DEP_LIBELF_LIBRARIES}
+            ${OPENMP_PTHREAD_LIB}
+            ${dependences}
+            LLVM-LIBOMPTARGET-JIT
+            "-Wl,--version-script=${CMAKE_CURRENT_SOURCE_DIR}/../exports"
+            "-Wl,-z,defs")
+
 add_dependencies(omptarget.rtl.cuda omptarget.devicertl.nvptx)
 
 # Install plugin under the lib destination folder.
@@ -57,15 +78,6 @@ target_include_directories(omptarget.rtl.cuda PRIVATE
   ${LIBOMPTARGET_INCLUDE_DIR}
   ${LIBOMPTARGET_DEP_LIBELF_INCLUDE_DIRS}
 )
-
-target_link_libraries(omptarget.rtl.cuda
-  elf_common
-  MemoryManager
-  ${LIBOMPTARGET_DEP_LIBRARIES}
-  ${LIBOMPTARGET_DEP_LIBELF_LIBRARIES}
-  ${OPENMP_PTHREAD_LIB}
-  "-Wl,--version-script=${CMAKE_CURRENT_SOURCE_DIR}/../exports"
-  "-Wl,-z,defs")
 
 # Report to the parent scope that we are building a plugin for CUDA.
 # This controls whether tests are run for the nvptx offloading target

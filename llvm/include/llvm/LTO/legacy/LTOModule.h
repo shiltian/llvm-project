@@ -111,6 +111,8 @@ public:
   createInLocalContext(std::unique_ptr<LLVMContext> Context, const void *mem,
                        size_t length, const TargetOptions &options,
                        StringRef path);
+  static ErrorOr<std::unique_ptr<LTOModule>>
+  clone(const LTOModule &LM, const TargetOptions &options);
 
   const Module &getModule() const { return *Mod; }
   Module &getModule() { return *Mod; }

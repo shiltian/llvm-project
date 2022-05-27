@@ -13,12 +13,17 @@
 #include <algorithm>
 #include <cassert>
 #include <cstddef>
+#include <cstdlib>
 #include <cuda.h>
+#include <fstream>
+#include <iostream>
 #include <list>
 #include <memory>
 #include <mutex>
 #include <string>
+#include <thread>
 #include <unordered_map>
+#include <unordered_set>
 #include <vector>
 
 #include "Debug.h"
@@ -31,7 +36,12 @@
 
 #include "MemoryManager.h"
 
+#include "JIT.h"
+
 #include "llvm/Frontend/OpenMP/OMPConstants.h"
+#include "llvm/Support/MemoryBuffer.h"
+
+using llvm::MemoryBuffer;
 
 // Utility for retrieving and printing CUDA error string.
 #ifdef OMPTARGET_DEBUG
@@ -91,6 +101,24 @@ struct KernelTy {
 };
 
 namespace {
+std::unique_ptr<jit::JITEngine> JITEngine;
+
+class NVDeviceToolChain : public jit::DeviceToolChain {
+public:
+  std::unique_ptr<llvm::MemoryBuffer> run(const std::string &FileName,
+                                          const jit::DeviceInfo &DI) override {
+    auto MBOrError = llvm::MemoryBuffer::getFile(
+        FileName, /*IsText=*/true, /*RequiresNullTerminator=*/false);
+    if (!MBOrError)
+      return nullptr;
+    if (const char *Str = getenv("LIBOMPTARGET_JIT_DUMP_ASM"))
+      fprintf(stderr, ">>> ptx:\n%s\n", (*MBOrError)->getBufferStart());
+    return std::move(*MBOrError);
+  }
+} NVDTC;
+
+std::unordered_set<void *> NonSpecializedImages;
+
 bool checkResult(CUresult Err, const char *ErrMsg) {
   if (Err == CUDA_SUCCESS)
     return true;
@@ -158,9 +186,20 @@ struct DeviceDataTy {
   int ThreadsPerBlock = 0;
   int BlocksPerGrid = 0;
   int WarpSize = 0;
+  // Maximum number of registers available per block
+  int MaxRegisters = 0;
   // OpenMP properties
   int NumTeams = 0;
   int NumThreads = 0;
+
+  struct ComputeCapabilityTy {
+    int Major = 3;
+    int Minor = 5;
+
+    std::string toString() const { return "sm_" + std::to_string(toInt()); }
+
+    int toInt() const { return Major * 10 + Minor; }
+  } ComputeCapability;
 };
 
 /// Resource allocator where \p T is the resource type.
@@ -471,7 +510,6 @@ class DeviceRTLTy {
     E.Table.EntriesBegin = E.Table.EntriesEnd = nullptr;
   }
 
-public:
   CUstream getStream(const int DeviceId, __tgt_async_info *AsyncInfo) const {
     assert(AsyncInfo && "AsyncInfo is nullptr");
 
@@ -486,6 +524,40 @@ public:
     return reinterpret_cast<CUstream>(AsyncInfo->Queue);
   }
 
+  __tgt_device_image *loadJITImage(int DeviceId, __tgt_device_image *Image) {
+    return JITEngine->getImage(DeviceId, Image);
+  }
+
+  __tgt_target_table *loadJITImage(int DeviceId, __tgt_device_image *Image,
+                                   __tgt_offload_entry *Entry, void **Args,
+                                   int NumArgs, int TeamNum, int ThreadLimit,
+                                   int LoopTripCount) {
+    auto Kernel = jit::Kernel::create(
+        Image, Entry->name, DeviceData[DeviceId].ComputeCapability.toString(),
+        Args, NumArgs, TeamNum, ThreadLimit, LoopTripCount);
+    if (auto *TT = JITEngine->getTargetTable(DeviceId, Kernel)) {
+      DP("couldn't find cached target table for kernel entry " DPxMOD ".\n",
+         DPxPTR(Entry));
+      return TT;
+    }
+
+    auto *NewImage = JITEngine->getImage(DeviceId, Kernel, Image);
+    if (!NewImage) {
+      DP("failed to jit image for kernel entry " DPxMOD ".\n", DPxPTR(Entry));
+      return nullptr;
+    }
+
+    auto *TT = loadBinary(DeviceId, NewImage);
+    if (!TT)
+      return nullptr;
+
+    if (!JITEngine->insertTargetTable(DeviceId, Kernel, TT))
+      return nullptr;
+
+    return TT;
+  }
+
+public:
   // This class should not be copied
   DeviceRTLTy(const DeviceRTLTy &) = delete;
   DeviceRTLTy(DeviceRTLTy &&) = delete;
@@ -749,6 +821,50 @@ public:
       DeviceData[DeviceId].NumThreads = DeviceData[DeviceId].ThreadsPerBlock;
     }
 
+    // Get compute capability
+    int SM;
+    Err = cuDeviceGetAttribute(
+        &SM, CU_DEVICE_ATTRIBUTE_COMPUTE_CAPABILITY_MAJOR, Device);
+    if (Err != CUDA_SUCCESS) {
+      DP("Error getting compute capablity major, use default value %d\n",
+         DeviceData[DeviceId].ComputeCapability.Major);
+    } else {
+      DeviceData[DeviceId].ComputeCapability.Major = SM;
+    }
+    Err = cuDeviceGetAttribute(
+        &SM, CU_DEVICE_ATTRIBUTE_COMPUTE_CAPABILITY_MINOR, Device);
+    if (Err != CUDA_SUCCESS) {
+      DP("Error getting compute capablity minor, use default value %d\n",
+         DeviceData[DeviceId].ComputeCapability.Minor);
+    } else {
+      DeviceData[DeviceId].ComputeCapability.Minor = SM;
+    }
+    int MaxRegs;
+    Err = cuDeviceGetAttribute(
+        &MaxRegs, CU_DEVICE_ATTRIBUTE_MAX_REGISTERS_PER_BLOCK, Device);
+    if (Err != CUDA_SUCCESS) {
+      DP("Error getting max registers per block, use default value %d\n",
+         DeviceData[DeviceId].MaxRegisters);
+    } else {
+      DeviceData[DeviceId].MaxRegisters = MaxRegs;
+    }
+
+    if (JITEngine) {
+      jit::DeviceInfo DI;
+      DI.Arch = "nvptx64";
+      DI.MCpu = DeviceData[DeviceId].ComputeCapability.toString();
+      DI.MaxNumRegs = DeviceData[DeviceId].MaxRegisters;
+      DI.ThreadsPerBlock = DeviceData[DeviceId].ThreadsPerBlock;
+      DI.BlocksPerGrid = DeviceData[DeviceId].BlocksPerGrid;
+      DI.WarpSize = 32;
+      DI.NumThreads = DeviceData[DeviceId].NumThreads;
+      DI.NumTeams = DeviceData[DeviceId].NumTeams;
+      DI.EnvNumThreads = EnvTeamThreadLimit;
+      DI.EnvNumTeams = EnvNumTeams;
+
+      JITEngine->init(DeviceId, DI);
+    }
+
     return OFFLOAD_SUCCESS;
   }
 
@@ -790,14 +906,24 @@ public:
 
   __tgt_target_table *loadBinary(const int DeviceId,
                                  const __tgt_device_image *Image) {
+    void *ImageStart = Image->ImageStart;
+    if (NonSpecializedImages.find(ImageStart) != NonSpecializedImages.end()) {
+      auto *NewImage =
+          loadJITImage(DeviceId, const_cast<__tgt_device_image *>(Image));
+      if (!NewImage)
+        return nullptr;
+
+      ImageStart = NewImage->ImageStart;
+    }
+
     // Clear the offload table as we are going to create a new one.
     clearOffloadEntriesTable(DeviceId);
 
     // Create the module and extract the function pointers.
     CUmodule Module;
-    DP("Load data from image " DPxMOD "\n", DPxPTR(Image->ImageStart));
+    DP("Load data from image " DPxMOD "\n", DPxPTR(ImageStart));
     CUresult Err =
-        cuModuleLoadDataEx(&Module, Image->ImageStart, 0, nullptr, nullptr);
+        cuModuleLoadDataEx(&Module, ImageStart, 0, nullptr, nullptr);
     if (!checkResult(Err, "Error returned from cuModuleLoadDataEx\n"))
       return nullptr;
 
@@ -1073,7 +1199,7 @@ public:
                           ptrdiff_t *TgtOffsets, const int ArgNum,
                           const int TeamNum, const int ThreadLimit,
                           const unsigned int LoopTripCount,
-                          __tgt_async_info *AsyncInfo) const {
+                          __tgt_async_info *AsyncInfo) {
     // All args are references.
     std::vector<void *> Args(ArgNum);
     std::vector<void *> Ptrs(ArgNum);
@@ -1083,7 +1209,27 @@ public:
       Args[I] = &Ptrs[I];
     }
 
-    KernelTy *KernelInfo = reinterpret_cast<KernelTy *>(TgtEntryPtr);
+    auto LaunchEntry =
+        reinterpret_cast<__tgt_kernel_launch_entry *>(TgtEntryPtr);
+    KernelTy *KernelInfo =
+        reinterpret_cast<KernelTy *>(LaunchEntry->TargetEntry);
+    // If kernel info is nullptr, it means we are dealing with JIT image.
+    if (KernelInfo == nullptr) {
+      assert(LaunchEntry->Image && LaunchEntry->HostEntry);
+      __tgt_device_image NewImage = *(LaunchEntry->Image);
+      NewImage.EntriesBegin = LaunchEntry->HostEntry;
+      NewImage.EntriesEnd = NewImage.EntriesBegin + 1;
+      auto TargetTable =
+          loadJITImage(DeviceId, &NewImage, LaunchEntry->HostEntry, Ptrs.data(),
+                       ArgNum, TeamNum, ThreadLimit, LoopTripCount);
+      if (!TargetTable)
+        return OFFLOAD_FAIL;
+
+      KernelInfo =
+          reinterpret_cast<KernelTy *>(TargetTable->EntriesBegin->addr);
+    }
+
+    assert(KernelInfo && "KernelInfo should not be nullptr");
 
     const bool IsSPMDGenericMode =
         KernelInfo->ExecutionMode == llvm::omp::OMP_TGT_EXEC_MODE_GENERIC_SPMD;
@@ -1484,7 +1630,24 @@ extern "C" {
 #endif
 
 int32_t __tgt_rtl_is_valid_binary(__tgt_device_image *image) {
-  return elf_check_machine(image, /* EM_CUDA */ 190);
+  if (elf_check_machine(image, /* EM_CUDA */ 190))
+    return 1;
+
+  jit::JITEngine::init();
+
+  if (!JITEngine)
+    JITEngine = std::make_unique<jit::JITEngine>("nvptx64", NVDTC,
+                                                 DeviceRTL.getNumOfDevices());
+
+  if (!jit::JITEngine::isValidModule("nvptx64", image))
+    return 0;
+
+  if (jit::JITEngine::isSpecializationSupported(image))
+    return 2;
+
+  NonSpecializedImages.insert(image->ImageStart);
+
+  return 3;
 }
 
 int32_t __tgt_rtl_number_of_devices() { return DeviceRTL.getNumOfDevices(); }

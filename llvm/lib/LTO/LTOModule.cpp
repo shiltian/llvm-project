@@ -38,6 +38,7 @@
 #include "llvm/Support/SourceMgr.h"
 #include "llvm/Support/TargetSelect.h"
 #include "llvm/Target/TargetLoweringObjectFile.h"
+#include "llvm/Transforms/Utils/Cloning.h"
 #include "llvm/Transforms/Utils/GlobalStatus.h"
 #include <system_error>
 using namespace llvm;
@@ -700,4 +701,48 @@ bool LTOModule::hasCtorDtor() const {
     }
   }
   return false;
+}
+
+ErrorOr<std::unique_ptr<LTOModule>>
+LTOModule::clone(const LTOModule &LM, const TargetOptions &options) {
+  auto NM = CloneModule(LM.getModule());
+
+  std::string TripleStr = NM->getTargetTriple();
+  if (TripleStr.empty())
+    TripleStr = sys::getDefaultTargetTriple();
+  llvm::Triple Triple(TripleStr);
+
+  // find machine architecture for this module
+  std::string errMsg;
+  const Target *march = TargetRegistry::lookupTarget(TripleStr, errMsg);
+  if (!march)
+    return make_error_code(object::object_error::arch_not_found);
+
+  // construct LTOModule, hand over ownership of module and target
+  SubtargetFeatures Features;
+  Features.getDefaultSubtargetFeatures(Triple);
+  std::string FeatureStr = Features.getString();
+  // Set a default CPU for Darwin triples.
+  std::string CPU;
+  if (Triple.isOSDarwin()) {
+    if (Triple.getArch() == llvm::Triple::x86_64)
+      CPU = "core2";
+    else if (Triple.getArch() == llvm::Triple::x86)
+      CPU = "yonah";
+    else if (Triple.isArm64e())
+      CPU = "apple-a12";
+    else if (Triple.getArch() == llvm::Triple::aarch64 ||
+             Triple.getArch() == llvm::Triple::aarch64_32)
+      CPU = "cyclone";
+  }
+
+  TargetMachine *target =
+      march->createTargetMachine(TripleStr, CPU, FeatureStr, options, None);
+
+  std::unique_ptr<LTOModule> Ret(
+      new LTOModule(std::move(NM), LM.MBRef, target));
+  Ret->parseSymbols();
+  Ret->parseMetadata();
+
+  return std::move(Ret);
 }

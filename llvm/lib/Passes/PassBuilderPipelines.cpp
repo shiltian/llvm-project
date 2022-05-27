@@ -1497,6 +1497,14 @@ PassBuilder::buildLTODefaultPipeline(OptimizationLevel Level,
     MPM.addPass(RequireAnalysisPass<ProfileSummaryAnalysis, Module>());
   }
 
+  {
+    FunctionPassManager EarlyFPM;
+    // Break up allocas
+    EarlyFPM.addPass(SROAPass());
+    MPM.addPass(createModuleToFunctionPassAdaptor(
+        std::move(EarlyFPM), PTO.EagerlyInvalidateAnalyses));
+  }
+
   // Try to run OpenMP optimizations, quick no-op if no OpenMP metadata present.
   MPM.addPass(OpenMPOptPass());
 
@@ -1631,9 +1639,6 @@ PassBuilder::buildLTODefaultPipeline(OptimizationLevel Level,
                         /* IsCS */ true, PGOOpt->ProfileFile,
                         PGOOpt->ProfileRemappingFile);
   }
-
-  // Break up allocas
-  FPM.addPass(SROAPass());
 
   // LTO provides additional opportunities for tailcall elimination due to
   // link-time inlining, and visibility of nocapture attribute.

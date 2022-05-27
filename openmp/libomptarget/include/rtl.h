@@ -18,6 +18,7 @@
 #include <map>
 #include <mutex>
 #include <string>
+#include <unordered_set>
 #include <vector>
 
 // Forward declarations.
@@ -183,5 +184,8 @@ struct TableMap {
       : Table(table), Index(index) {}
 };
 typedef std::map<void *, TableMap> HostPtrToTableMapTy;
+
+/// A set that stores all registered JIT images.
+extern std::unordered_set<__tgt_device_image *> RegisteredJITImages;
 
 #endif

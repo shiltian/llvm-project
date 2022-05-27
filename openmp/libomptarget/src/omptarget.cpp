@@ -107,6 +107,13 @@ static int InitLibrary(DeviceTy &Device) {
         rc = OFFLOAD_FAIL;
         break;
       }
+
+      const bool IsJITImage =
+          RegisteredJITImages.find(img) != RegisteredJITImages.end();
+
+      if (IsJITImage)
+        continue;
+
       // 2) load image into the target table.
       __tgt_target_table *TargetTable = TransTable->TargetsTable[device_id] =
           Device.load_binary(img);
@@ -1500,16 +1507,6 @@ int target(ident_t *loc, DeviceTy &Device, void *HostPtr, int32_t ArgNum,
     return OFFLOAD_FAIL;
   }
 
-  // get target table.
-  __tgt_target_table *TargetTable = nullptr;
-  {
-    std::lock_guard<std::mutex> TrlTblLock(PM->TrlTblMtx);
-    assert(TM->Table->TargetsTable.size() > (size_t)DeviceId &&
-           "Not expecting a device ID outside the table's bounds!");
-    TargetTable = TM->Table->TargetsTable[DeviceId];
-  }
-  assert(TargetTable && "Global data has not been mapped\n");
-
   // We need to keep bases and offsets separate. Sometimes (e.g. in OpenCL) we
   // need to manifest base pointers prior to launching a kernel. Even if we have
   // mapped an object only partially, e.g. A[N:M], although the kernel is
@@ -1536,11 +1533,42 @@ int target(ident_t *loc, DeviceTy &Device, void *HostPtr, int32_t ArgNum,
     }
   }
 
-  // Launch device execution.
-  void *TgtEntryPtr = TargetTable->EntriesBegin[TM->Index].addr;
-  DP("Launching target execution %s with pointer " DPxMOD " (index=%d).\n",
-     TargetTable->EntriesBegin[TM->Index].name, DPxPTR(TgtEntryPtr), TM->Index);
+  __tgt_device_image *Image = TM->Table->TargetsImages[Device.DeviceID];
+  const bool UseJIT =
+      RegisteredJITImages.find(Image) != RegisteredJITImages.end();
+  void *TgtEntryPtr = nullptr;
+  __tgt_kernel_launch_entry LaunchEntry;
+  // get target table if in non-JIT mode.
+  if (UseJIT) {
+    __tgt_offload_entry *Entry = nullptr;
+    __tgt_target_table *HostTable = &TM->Table->HostTable;
+    // Find the entry name from the host entries
+    // TODO: We might want a map for this
+    for (auto Itr = HostTable->EntriesBegin; Itr != HostTable->EntriesEnd;
+         ++Itr)
+      if (Itr->addr == HostPtr) {
+        Entry = Itr;
+        break;
+      }
+    assert(Entry && "cannot find entry");
+    LaunchEntry.HostEntry = Entry;
+    LaunchEntry.Image = Image;
+    DP("Launching target jit execution %s with pointer " DPxMOD ".\n",
+       Entry->name, DPxPTR(TgtEntryPtr));
+  } else {
+    std::lock_guard<std::mutex> TrlTblLock(PM->TrlTblMtx);
+    assert(TM->Table->TargetsTable.size() > (size_t)DeviceId &&
+           "Not expecting a device ID outside the table's bounds!");
+    __tgt_target_table *TargetTable = TM->Table->TargetsTable[DeviceId];
+    assert(TargetTable && "Global data has not been mapped\n");
+    LaunchEntry.TargetEntry = TargetTable->EntriesBegin[TM->Index].addr;
+    DP("Launching target execution %s with pointer " DPxMOD " (index=%d).\n",
+       TargetTable->EntriesBegin[TM->Index].name, DPxPTR(TgtEntryPtr),
+       TM->Index);
+  }
+  TgtEntryPtr = &LaunchEntry;
 
+  // Launch device execution.
   {
     TIMESCOPE_WITH_NAME_AND_IDENT(
         IsTeamConstruct ? "runTargetTeamRegion" : "runTargetRegion", loc);

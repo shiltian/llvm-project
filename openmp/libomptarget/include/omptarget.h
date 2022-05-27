@@ -197,6 +197,12 @@ struct __tgt_device_info {
   void *Device = nullptr;
 };
 
+struct __tgt_kernel_launch_entry {
+  __tgt_offload_entry *HostEntry = nullptr;
+  void *TargetEntry = nullptr;
+  __tgt_device_image *Image = nullptr;
+};
+
 #ifdef __cplusplus
 extern "C" {
 #endif

@@ -128,6 +128,7 @@ template <typename VTy, typename Ty> struct ValueRAII {
         Val(OldValue), Active(Active) {
     if (!Active)
       return;
+    Ptr = &V.lookup(/* IsReadonly */ false, Ident);
     ASSERT(*Ptr == OldValue &&
            "ValueRAII initialization with wrong old value!");
     *Ptr = NewValue;

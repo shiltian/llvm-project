@@ -35,8 +35,16 @@
 #include "omptargetplugin.h"
 #include "print_tracing.h"
 
+#include "llvm/ADT/StringRef.h"
 #include "llvm/Frontend/OpenMP/OMPConstants.h"
 #include "llvm/Frontend/OpenMP/OMPGridValues.h"
+#include "llvm/Support/MemoryBuffer.h"
+#include "llvm/Support/Path.h"
+#include "llvm/Support/Program.h"
+
+#include "JIT.h"
+
+using namespace llvm;
 
 // hostrpc interface, FIXME: consider moving to its own include these are
 // statically linked into amdgpu/plugin if present from hostrpc_services.a,
@@ -850,7 +858,80 @@ pthread_mutex_t SignalPoolT::mutex = PTHREAD_MUTEX_INITIALIZER;
 
 static RTLDeviceInfoTy DeviceInfo;
 
+static __tgt_target_table *
+__tgt_rtl_load_binary_locked(int32_t device_id, __tgt_device_image *image);
+
 namespace {
+
+std::unique_ptr<jit::JITEngine> JITEngine;
+
+class AMDDeviceToolChain : public jit::DeviceToolChain {
+  static std::string getMainExecutable(const char *Name) {
+    void *Ptr = (void *)(intptr_t)&getMainExecutable;
+    auto COWPath = sys::fs::getMainExecutable(Name, Ptr);
+    return sys::path::parent_path(COWPath).str();
+  }
+
+  /// Get a temporary filename suitable for output.
+  static Error createOutputFile(const Twine &Prefix, StringRef Extension,
+                                SmallString<128> &NewFilename) {
+    if (std::error_code EC =
+            sys::fs::createTemporaryFile(Prefix, Extension, NewFilename))
+      return createFileError(NewFilename, EC);
+    return Error::success();
+  }
+
+  Expected<std::string> link(StringRef Input, StringRef Prefix) {
+    ErrorOr<std::string> LLDPath =
+        sys::findProgramByName("lld", {getMainExecutable("lld")});
+    if (!LLDPath)
+      LLDPath = sys::findProgramByName("lld");
+    if (!LLDPath)
+      return createStringError(LLDPath.getError(),
+                               "Unable to find 'lld' in path");
+
+    SmallString<128> TempFile;
+    if (Error Err = createOutputFile(Prefix, "o", TempFile))
+      return std::move(Err);
+
+    SmallVector<StringRef, 16> CmdArgs;
+    CmdArgs.push_back(*LLDPath);
+    CmdArgs.push_back("-flavor");
+    CmdArgs.push_back("gnu");
+    CmdArgs.push_back("--no-undefined");
+    CmdArgs.push_back("-shared");
+    CmdArgs.push_back("-o");
+    CmdArgs.push_back(TempFile);
+    CmdArgs.push_back(Input);
+
+    if (sys::ExecuteAndWait(*LLDPath, CmdArgs))
+      return createStringError(inconvertibleErrorCode(), "'lld' failed");
+
+    return static_cast<std::string>(TempFile);
+  }
+
+public:
+  std::unique_ptr<MemoryBuffer> run(const std::string &FileName,
+                                    const jit::DeviceInfo &DI) override {
+    std::string Prefix = "libomptarget-amdgcn-" + DI.MCpu + "-jit";
+    auto FileNameOrErr = link(FileName, Prefix);
+    if (!FileNameOrErr) {
+      Error E = FileNameOrErr.takeError();
+      return nullptr;
+    }
+
+    std::string TempFile = *FileNameOrErr;
+    auto MBOrError = MemoryBuffer::getFile(TempFile, /*IsText=*/false,
+                                           /*RequiresNullTerminator=*/false);
+    if (std::error_code EC = MBOrError.getError()) {
+      sys::fs::remove(TempFile);
+      return nullptr;
+    }
+
+    sys::fs::remove(TempFile);
+    return std::move(*MBOrError);
+  }
+} AMDDTC;
 
 int32_t dataRetrieve(int32_t DeviceId, void *HstPtr, void *TgtPtr, int64_t Size,
                      __tgt_async_info *AsyncInfo) {
@@ -1090,6 +1171,30 @@ static uint64_t acquire_available_packet_id(hsa_queue_t *queue) {
   return packet_id;
 }
 
+__tgt_target_table *loadJITImage(int DeviceId, __tgt_device_image *Image,
+                                 __tgt_offload_entry *Entry, void **Args,
+                                 int NumArgs, int TeamNum, int ThreadLimit,
+                                 int LoopTripCount) {
+  auto Kernel =
+      jit::Kernel::create(Image, Entry->name, DeviceInfo.GPUName[DeviceId],
+                          Args, NumArgs, TeamNum, ThreadLimit, LoopTripCount);
+  if (auto *TT = JITEngine->getTargetTable(DeviceId, Kernel))
+    return TT;
+
+  auto *NewImage = JITEngine->getImage(DeviceId, Kernel, Image);
+  if (!NewImage)
+    return nullptr;
+
+  auto *TT = __tgt_rtl_load_binary_locked(DeviceId, NewImage);
+  if (!TT)
+    return nullptr;
+
+  if (!JITEngine->insertTargetTable(DeviceId, Kernel, TT))
+    return nullptr;
+
+  return TT;
+}
+
 int32_t runRegionLocked(int32_t device_id, void *tgt_entry_ptr, void **tgt_args,
                         ptrdiff_t *tgt_offsets, int32_t arg_num,
                         int32_t num_teams, int32_t thread_limit,
@@ -1111,7 +1216,24 @@ int32_t runRegionLocked(int32_t device_id, void *tgt_entry_ptr, void **tgt_args,
     DP("Offseted base: arg[%d]:" DPxMOD "\n", i, DPxPTR(ptrs[i]));
   }
 
-  KernelTy *KernelInfo = (KernelTy *)tgt_entry_ptr;
+  auto LaunchEntry = reinterpret_cast<__tgt_kernel_launch_entry *>(tgt_entry_ptr);
+  KernelTy *KernelInfo = reinterpret_cast<KernelTy *>(LaunchEntry->TargetEntry);
+  // If kernel info is nullptr, it means we are dealing with JIT image.
+  if (KernelInfo == nullptr) {
+    assert(LaunchEntry->Image && LaunchEntry->HostEntry);
+    __tgt_device_image NewImage = *(LaunchEntry->Image);
+    NewImage.EntriesBegin = LaunchEntry->HostEntry;
+    NewImage.EntriesEnd = NewImage.EntriesBegin + 1;
+    auto TargetTable =
+        loadJITImage(device_id, &NewImage, LaunchEntry->HostEntry, ptrs.data(),
+                     arg_num, num_teams, thread_limit, loop_tripcount);
+    if (!TargetTable)
+      return OFFLOAD_FAIL;
+
+    KernelInfo = reinterpret_cast<KernelTy *>(TargetTable->EntriesBegin->addr);
+  }
+
+  assert(KernelInfo && "KernelInfo should not be nullptr");
 
   std::string kernel_name = std::string(KernelInfo->Name);
   auto &KernelInfoTable = DeviceInfo.KernelInfoTable;
@@ -1640,7 +1762,22 @@ hsa_status_t allow_access_to_all_gpu_agents(void *ptr) {
 
 extern "C" {
 int32_t __tgt_rtl_is_valid_binary(__tgt_device_image *image) {
-  return elf_machine_id_is_amdgcn(image);
+  if(elf_machine_id_is_amdgcn(image))
+    return 1;
+
+  jit::JITEngine::init();
+
+  if (!JITEngine)
+    JITEngine = std::make_unique<jit::JITEngine>("amdgcn", AMDDTC,
+                                                 DeviceInfo.NumberOfDevices);
+
+  if (!jit::JITEngine::isValidModule("amdgcn", image))
+    return 0;
+
+  if (jit::JITEngine::isSpecializationSupported(image))
+    return 2;
+
+  return 3;
 }
 
 int __tgt_rtl_number_of_devices() {
@@ -1811,11 +1948,22 @@ int32_t __tgt_rtl_init_device(int device_id) {
      DeviceInfo.GroupsPerDevice[device_id] *
          DeviceInfo.ThreadsPerGroup[device_id]);
 
+  if (JITEngine) {
+    jit::DeviceInfo DI;
+    DI.Arch = "amdgcn";
+    DI.MCpu = DeviceInfo.GPUName[device_id];
+    DI.ThreadsPerBlock = DeviceInfo.ThreadsPerGroup[device_id];
+    DI.BlocksPerGrid = DeviceInfo.GroupsPerDevice[device_id];
+    DI.WarpSize = 32;
+    DI.NumThreads = DeviceInfo.NumThreads[device_id];
+    DI.NumTeams = DeviceInfo.NumTeams[device_id];
+    DI.EnvNumThreads = DeviceInfo.Env.TeamThreadLimit;
+    DI.EnvNumTeams = DeviceInfo.Env.NumTeams;
+    JITEngine->init(device_id, DI);
+  }
+
   return OFFLOAD_SUCCESS;
 }
-
-static __tgt_target_table *
-__tgt_rtl_load_binary_locked(int32_t device_id, __tgt_device_image *image);
 
 __tgt_target_table *__tgt_rtl_load_binary(int32_t device_id,
                                           __tgt_device_image *image) {

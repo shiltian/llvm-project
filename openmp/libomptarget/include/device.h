@@ -22,6 +22,7 @@
 #include <mutex>
 #include <set>
 #include <thread>
+#include <unordered_map>
 #include <vector>
 
 #include "ExclusiveAccess.h"
@@ -302,6 +303,9 @@ typedef std::map<void *, ShadowPtrValTy> ShadowPtrListTy;
 struct PendingCtorDtorListsTy {
   std::list<void *> PendingCtors;
   std::list<void *> PendingDtors;
+
+  std::unordered_map<__tgt_device_image *, std::list<void *>> PendingJITCtors;
+  std::unordered_map<__tgt_device_image *, std::list<void *>> PendingJITDtors;
 };
 typedef std::map<__tgt_bin_desc *, PendingCtorDtorListsTy>
     PendingCtorsDtorsPerLibrary;
@@ -460,6 +464,10 @@ struct DeviceTy {
   /// Destroy the event.
   int32_t destroyEvent(void *Event);
   /// }
+
+  __tgt_target_table *loadJITImage(__tgt_device_image *Image,
+                                   const char *EntryName, void **TgtArgs,
+                                   ptrdiff_t *TgtOffsets, int NumArgs);
 
 private:
   // Call to RTL

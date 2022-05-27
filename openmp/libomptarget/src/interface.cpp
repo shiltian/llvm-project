@@ -19,7 +19,10 @@
 #include <cassert>
 #include <cstdio>
 #include <cstdlib>
+#include <fstream>
+#include <memory>
 #include <mutex>
+#include <vector>
 
 ////////////////////////////////////////////////////////////////////////////////
 /// adds requires flags
@@ -40,6 +43,7 @@ EXTERN void __tgt_register_lib(__tgt_bin_desc *desc) {
       }
     }
   }
+  // PM->RTLs.RegisterLib(createBinDescFrom(desc));
   PM->RTLs.RegisterLib(desc);
 }
 
