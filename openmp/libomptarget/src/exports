@@ -55,6 +55,8 @@ VERS1.0 {
     __tgt_interop_init;
     __tgt_interop_use;
     __tgt_interop_destroy;
+    __tgt_set_device_allocator;
+    __tgt_reset_device_allocator;
   local:
     *;
 };

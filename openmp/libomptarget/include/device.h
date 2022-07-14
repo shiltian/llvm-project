@@ -461,6 +461,12 @@ struct DeviceTy {
   int32_t destroyEvent(void *Event);
   /// }
 
+  /// PoC
+  /// {
+  int32_t set_device_allocator(void *Allocator, void *Deallocator);
+  int32_t reset_device_allocator();
+  /// }
+
 private:
   // Call to RTL
   void init(); // To be called only via DeviceTy::initOnce()

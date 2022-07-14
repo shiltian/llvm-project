@@ -179,6 +179,13 @@ int32_t __tgt_rtl_init_async_info(int32_t ID, __tgt_async_info **AsyncInfoPtr);
 int32_t __tgt_rtl_init_device_info(int32_t ID, __tgt_device_info *DeviceInfoPtr,
                                    const char **ErrStr);
 
+// PoC
+// {
+int32_t __tgt_rtl_set_device_allocator(int32_t ID, void *Allocator,
+                                       void *Deallocator);
+int32_t __tgt_rtl_reset_device_allocator(int32_t ID);
+// }
+
 #ifdef __cplusplus
 }
 #endif

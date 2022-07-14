@@ -32,6 +32,8 @@ VERS1.0 {
     __tgt_rtl_destroy_event;
     __tgt_rtl_init_device_info;
     __tgt_rtl_init_async_info;
+    __tgt_rtl_set_device_allocator;
+    __tgt_rtl_reset_device_allocator;
   local:
     *;
 };

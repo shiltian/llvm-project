@@ -303,3 +303,12 @@ EXTERN int __tgt_print_device_info(int64_t DeviceId) {
   return PM->Devices[DeviceId]->printDeviceInfo(
       PM->Devices[DeviceId]->RTLDeviceID);
 }
+
+// PoC
+EXTERN int __tgt_set_device_allocator(int64_t DeviceId, void *Allocator,
+                                      void *Deallocator) {
+  return PM->Devices[DeviceId]->set_device_allocator(Allocator, Deallocator);
+}
+EXTERN int __tgt_reset_device_allocator(int64_t DeviceId) {
+  return PM->Devices[DeviceId]->reset_device_allocator();
+}

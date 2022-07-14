@@ -363,8 +363,18 @@ class DeviceRTLTy {
   /// allocate and free memory.
   class CUDADeviceAllocatorTy : public DeviceAllocatorTy {
     std::unordered_map<void *, TargetAllocTy> HostPinnedAllocs;
+    int DeviceId;
+    bool UseUserDefinedAllocator = false;
+
+    using UserDefinedAllocatorTy = void *(size_t, int);
+    using UserDefinedDeallocatorTy = void(void *, int);
+
+    UserDefinedAllocatorTy *UserDefinedAllocator;
+    UserDefinedDeallocatorTy *UserDefinedDeallocator;
 
   public:
+    CUDADeviceAllocatorTy(int DeviceId) : DeviceId(DeviceId) {}
+
     void *allocate(size_t Size, void *, TargetAllocTy Kind) override {
       if (Size == 0)
         return nullptr;
@@ -374,11 +384,15 @@ class DeviceRTLTy {
       switch (Kind) {
       case TARGET_ALLOC_DEFAULT:
       case TARGET_ALLOC_DEVICE:
-        CUdeviceptr DevicePtr;
-        Err = cuMemAlloc(&DevicePtr, Size);
-        MemAlloc = (void *)DevicePtr;
-        if (!checkResult(Err, "Error returned from cuMemAlloc\n"))
-          return nullptr;
+        if (UseUserDefinedAllocator) {
+          MemAlloc = UserDefinedAllocator(Size, DeviceId);
+        } else {
+          CUdeviceptr DevicePtr;
+          Err = cuMemAlloc(&DevicePtr, Size);
+          MemAlloc = (void *)DevicePtr;
+          if (!checkResult(Err, "Error returned from cuMemAlloc\n"))
+            return nullptr;
+        }
         break;
       case TARGET_ALLOC_HOST:
         void *HostPtr;
@@ -411,9 +425,13 @@ class DeviceRTLTy {
       case TARGET_ALLOC_DEFAULT:
       case TARGET_ALLOC_DEVICE:
       case TARGET_ALLOC_SHARED:
-        Err = cuMemFree((CUdeviceptr)TgtPtr);
-        if (!checkResult(Err, "Error returned from cuMemFree\n"))
-          return OFFLOAD_FAIL;
+        if (UseUserDefinedAllocator)
+          UserDefinedDeallocator(TgtPtr, DeviceId);
+        else {
+          Err = cuMemFree((CUdeviceptr)TgtPtr);
+          if (!checkResult(Err, "Error returned from cuMemFree\n"))
+            return OFFLOAD_FAIL;
+        }
         break;
       case TARGET_ALLOC_HOST:
         Err = cuMemFreeHost(TgtPtr);
@@ -422,6 +440,20 @@ class DeviceRTLTy {
         break;
       }
 
+      return OFFLOAD_SUCCESS;
+    }
+
+    int setAllocator(void *Allocator, void *Deallocator) {
+      UseUserDefinedAllocator = true;
+
+      UserDefinedAllocator = (UserDefinedAllocatorTy *)Allocator;
+      UserDefinedDeallocator = (UserDefinedDeallocatorTy *)Deallocator;
+
+      return OFFLOAD_SUCCESS;
+    }
+
+    int resetAllocator() {
+      UseUserDefinedAllocator = false;
       return OFFLOAD_SUCCESS;
     }
   };
@@ -557,7 +589,7 @@ public:
     }
 
     for (int I = 0; I < NumberOfDevices; ++I)
-      DeviceAllocators.emplace_back();
+      DeviceAllocators.emplace_back(I);
 
     // Get the size threshold from environment variable
     std::pair<size_t, bool> Res = MemoryManagerTy::getSizeThresholdFromEnv();
@@ -1505,6 +1537,14 @@ public:
 
     return OFFLOAD_SUCCESS;
   }
+
+  int setDeviceAllocator(int DeviceId, void *Allocator, void *Deallocator) {
+    return DeviceAllocators[DeviceId].setAllocator(Allocator, Deallocator);
+  }
+
+  int resetDeviceAllocator(int DeviceId) {
+    return DeviceAllocators[DeviceId].resetAllocator();
+  }
 };
 
 DeviceRTLTy DeviceRTL;
@@ -1814,6 +1854,15 @@ int32_t __tgt_rtl_init_device_info(int32_t DeviceId,
     return OFFLOAD_FAIL;
 
   return DeviceRTL.initDeviceInfo(DeviceId, DeviceInfoPtr, ErrStr);
+}
+
+int32_t __tgt_rtl_set_device_allocator(int32_t DeviceId, void *Allocator,
+                                       void *Deallocator) {
+  return DeviceRTL.setDeviceAllocator(DeviceId, Allocator, Deallocator);
+}
+
+int32_t __tgt_rtl_reset_device_allocator(int32_t DeviceId) {
+  return DeviceRTL.resetDeviceAllocator(DeviceId);
 }
 
 #ifdef __cplusplus

@@ -205,6 +205,10 @@ void RTLsTy::loadRTLs() {
         dlsym(DynlibHandle, "__tgt_rtl_init_async_info");
     *((void **)&R.init_device_info) =
         dlsym(DynlibHandle, "__tgt_rtl_init_device_info");
+    *((void **)&R.set_device_allocator) =
+        dlsym(DynlibHandle, "__tgt_rtl_set_device_allocator");
+    *((void **)&R.reset_device_allocator) =
+        dlsym(DynlibHandle, "__tgt_rtl_reset_device_allocator");
   }
 
   DP("RTLs loaded!\n");

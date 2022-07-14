@@ -663,6 +663,20 @@ int32_t DeviceTy::destroyEvent(void *Event) {
   return OFFLOAD_SUCCESS;
 }
 
+int32_t DeviceTy::set_device_allocator(void *Allocator, void *Deallocator) {
+  if (RTL->set_device_allocator)
+    return RTL->set_device_allocator(RTLDeviceID, Allocator, Deallocator);
+
+  return OFFLOAD_SUCCESS;
+}
+
+int32_t DeviceTy::reset_device_allocator() {
+  if (RTL->reset_device_allocator)
+    return RTL->reset_device_allocator(RTLDeviceID);
+
+  return OFFLOAD_SUCCESS;
+}
+
 /// Check whether a device has an associated RTL and initialize it if it's not
 /// already initialized.
 bool deviceIsReady(int DeviceNum) {
