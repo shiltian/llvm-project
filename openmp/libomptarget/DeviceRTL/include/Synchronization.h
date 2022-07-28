@@ -62,6 +62,9 @@ namespace atomic {
 /// Atomically load \p Addr with \p Ordering semantics.
 uint32_t load(uint32_t *Addr, int Ordering);
 
+/// Atomically load \p Addr with \p Ordering semantics.
+uint64_t load(uint64_t *Addr, int Ordering);
+
 /// Atomically store \p V to \p Addr with \p Ordering semantics.
 void store(uint32_t *Addr, uint32_t V, int Ordering);
 
@@ -75,6 +78,35 @@ uint32_t add(uint32_t *Addr, uint32_t V, int Ordering);
 uint64_t add(uint64_t *Addr, uint64_t V, int Ordering);
 
 } // namespace atomic
+
+namespace mutex {
+
+class TicketLock {
+  uint64_t NowServing = 0;
+  uint64_t NextTicket = 0;
+
+public:
+  TicketLock() = default;
+
+  TicketLock(const TicketLock &) = delete;
+
+  TicketLock(TicketLock &&) = delete;
+
+  void lock();
+
+  void unlock();
+};
+
+template <typename T> class LockGaurd {
+  T &Lock;
+
+public:
+  explicit LockGaurd(T &L) : Lock(L) { Lock.lock(); }
+
+  ~LockGaurd() { Lock.unlock(); }
+};
+
+} // namespace mutex
 
 } // namespace _OMP
 

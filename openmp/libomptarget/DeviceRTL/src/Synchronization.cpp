@@ -35,6 +35,10 @@ uint32_t atomicLoad(uint32_t *Address, int Ordering) {
   return __atomic_fetch_add(Address, 0U, __ATOMIC_SEQ_CST);
 }
 
+uint64_t atomicLoad(uint64_t *Address, int Ordering) {
+  return __atomic_fetch_add(Address, 0U, __ATOMIC_SEQ_CST);
+}
+
 void atomicStore(uint32_t *Address, uint32_t Val, int Ordering) {
   __atomic_store_n(Address, Val, Ordering);
 }
@@ -320,6 +324,10 @@ uint32_t atomic::load(uint32_t *Addr, int Ordering) {
   return impl::atomicLoad(Addr, Ordering);
 }
 
+uint64_t atomic::load(uint64_t *Addr, int Ordering) {
+  return impl::atomicLoad(Addr, Ordering);
+}
+
 void atomic::store(uint32_t *Addr, uint32_t V, int Ordering) {
   impl::atomicStore(Addr, V, Ordering);
 }
@@ -334,6 +342,17 @@ uint32_t atomic::add(uint32_t *Addr, uint32_t V, int Ordering) {
 
 uint64_t atomic::add(uint64_t *Addr, uint64_t V, int Ordering) {
   return impl::atomicAdd(Addr, V, Ordering);
+}
+
+void mutex::TicketLock::lock() {
+  uint64_t MyTicket = atomic::add(&NextTicket, 1U, __ATOMIC_SEQ_CST);
+
+  while (atomic::load(&NowServing, __ATOMIC_SEQ_CST) != MyTicket)
+    ;
+}
+
+void mutex::TicketLock::unlock() {
+  atomic::add(&NowServing, 1U, __ATOMIC_SEQ_CST);
 }
 
 extern "C" {

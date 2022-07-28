@@ -91,6 +91,7 @@ set(include_files
   ${include_directory}/Debug.h
   ${include_directory}/Interface.h
   ${include_directory}/Mapping.h
+  ${include_directory}/Memory.h
   ${include_directory}/State.h
   ${include_directory}/Synchronization.h
   ${include_directory}/Types.h
@@ -102,6 +103,7 @@ set(src_files
   ${source_directory}/Debug.cpp
   ${source_directory}/Kernel.cpp
   ${source_directory}/Mapping.cpp
+  ${source_directory}/Memory.cpp
   ${source_directory}/Misc.cpp
   ${source_directory}/Parallelism.cpp
   ${source_directory}/Reduction.cpp

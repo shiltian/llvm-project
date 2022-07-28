@@ -968,6 +968,82 @@ public:
       }
     }
 
+    // Initialize heap buffer
+    {
+      const char *BufferVarName = "omptarget_device_heap_buffer";
+      const char *SizeVarName = "omptarget_device_heap_size";
+      CUdeviceptr BufferVarPtr;
+      CUdeviceptr SizeVarPtr;
+      size_t BufferVarSize;
+      size_t SizeVarSize;
+
+      Err = cuModuleGetGlobal(&BufferVarPtr, &BufferVarSize, Module,
+                              BufferVarName);
+      if (Err == CUDA_SUCCESS) {
+        if (BufferVarSize != sizeof(uint64_t)) {
+          REPORT("Global global heap buffer pointer '%s' - size mismatch (%zu "
+                 "!= %zu)\n",
+                 BufferVarName, BufferVarSize, sizeof(uint64_t));
+          CUDA_ERR_STRING(Err);
+          return nullptr;
+        }
+
+        Err = cuModuleGetGlobal(&SizeVarPtr, &SizeVarSize, Module, SizeVarName);
+        if (Err == CUDA_SUCCESS) {
+          if (SizeVarSize != sizeof(uint64_t)) {
+            REPORT("Global global heap size variable '%s' - size mismatch (%zu "
+                   "!= %zu)\n",
+                   SizeVarName, SizeVarSize, sizeof(uint64_t));
+            CUDA_ERR_STRING(Err);
+            return nullptr;
+          }
+
+          CUdeviceptr BufferPtr;
+          size_t HeapSize = 1024U * 1024 * 1024 * 2;
+
+          Err = cuMemAlloc(&BufferPtr, HeapSize);
+          if (Err != CUDA_SUCCESS) {
+            REPORT("Error when allocating heap bufferm size = %zu\n", HeapSize);
+            CUDA_ERR_STRING(Err);
+            return nullptr;
+          }
+
+          Err = cuMemcpyHtoD(BufferVarPtr, &BufferPtr, BufferVarSize);
+          if (Err != CUDA_SUCCESS) {
+            REPORT("Error when copying data from host to device. Pointers: "
+                   "host = " DPxMOD ", device = " DPxMOD ", size = %zu\n",
+                   DPxPTR(&BufferPtr), DPxPTR(BufferVarPtr), BufferVarSize);
+            CUDA_ERR_STRING(Err);
+            return nullptr;
+          }
+
+          Err = cuMemcpyHtoD(SizeVarPtr, &HeapSize, SizeVarSize);
+          if (Err != CUDA_SUCCESS) {
+            REPORT("Error when copying data from host to device. Pointers: "
+                   "host = " DPxMOD ", device = " DPxMOD ", size = %zu\n",
+                   DPxPTR(&HeapSize), DPxPTR(SizeVarPtr), SizeVarSize);
+            CUDA_ERR_STRING(Err);
+            return nullptr;
+          }
+
+          DP("Successfully set heap buffer. omptarget_device_heap_buffer "
+             "= " DPxMOD ", omptarget_device_heap_size = %zu\n",
+             DPxPTR(BufferPtr), HeapSize);
+        } else {
+          DP("Finding global heap buffer pointer '%s' - symbol missing.\n",
+             SizeVarName);
+          DP("Continue, considering this is an image does not require heap "
+             "allocation.\n");
+        }
+
+      } else {
+        DP("Finding global heap buffer pointer '%s' - symbol missing.\n",
+           BufferVarName);
+        DP("Continue, considering this is an image does not require heap "
+           "allocation.\n");
+      }
+    }
+
     return getOffloadEntriesTable(DeviceId);
   }
 
