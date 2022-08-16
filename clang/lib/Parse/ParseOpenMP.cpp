@@ -3163,7 +3163,6 @@ OMPClause *Parser::ParseOpenMPClause(OpenMPDirectiveKind DKind,
   case OMPC_simdlen:
   case OMPC_collapse:
   case OMPC_ordered:
-  case OMPC_num_teams:
   case OMPC_thread_limit:
   case OMPC_priority:
   case OMPC_grainsize:
@@ -3327,6 +3326,14 @@ OMPClause *Parser::ParseOpenMPClause(OpenMPDirectiveKind DKind,
   case OMPC_inclusive:
   case OMPC_exclusive:
   case OMPC_affinity:
+  case OMPC_num_teams:
+    // OpenMP [teams Construct, Restrictions]
+    //  At most one num_teams clause can appear on the directive.
+    if (CKind == OMPC_num_teams && !FirstClause) {
+      Diag(Tok, diag::err_omp_more_one_clause)
+          << getOpenMPDirectiveName(DKind) << getOpenMPClauseName(CKind) << 0;
+      ErrorFound = true;
+    }
     Clause = ParseOpenMPVarListClause(DKind, CKind, WrongDirective);
     break;
   case OMPC_sizes:

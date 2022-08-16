@@ -6485,11 +6485,14 @@ void CGOpenMPRuntime::emitTargetOutlinedFunctionHelper(
       OffloadEntriesInfoManagerTy::OMPTargetRegionEntryTargetRegion);
 
   // Add NumTeams and ThreadLimit attributes to the outlined GPU function
-  int32_t DefaultValTeams = -1;
+  SmallVector<int32_t, 4> DefaultValTeams;
   getNumTeamsExprForTargetDirective(CGF, D, DefaultValTeams);
-  if (DefaultValTeams > 0 && OutlinedFn) {
-    OutlinedFn->addFnAttr("omp_target_num_teams",
-                          std::to_string(DefaultValTeams));
+  if (!DefaultValTeams.empty() && DefaultValTeams.front() > 0 && OutlinedFn) {
+    std::string AttrVal;
+    for (int32_t V : DefaultValTeams)
+      AttrVal += std::to_string(V) + ",";
+    AttrVal.pop_back();
+    OutlinedFn->addFnAttr("omp_target_num_teams", AttrVal);
   }
   int32_t DefaultValThreads = -1;
   getNumThreadsExprForTargetDirective(CGF, D, DefaultValThreads);
@@ -6554,10 +6557,10 @@ const Stmt *CGOpenMPRuntime::getSingleCompoundChild(ASTContext &Ctx,
   return Child;
 }
 
-const Expr *CGOpenMPRuntime::getNumTeamsExprForTargetDirective(
+const Optional<ArrayRef<const Expr *>>
+CGOpenMPRuntime::getNumTeamsExprForTargetDirective(
     CodeGenFunction &CGF, const OMPExecutableDirective &D,
-    int32_t &DefaultVal) {
-
+    SmallVectorImpl<int32_t> &DefaultVal) {
   OpenMPDirectiveKind DirectiveKind = D.getDirectiveKind();
   assert(isOpenMPTargetExecutionDirective(DirectiveKind) &&
          "Expected target-based executable directive.");
@@ -6572,28 +6575,28 @@ const Expr *CGOpenMPRuntime::getNumTeamsExprForTargetDirective(
             dyn_cast_or_null<OMPExecutableDirective>(ChildStmt)) {
       if (isOpenMPTeamsDirective(NestedDir->getDirectiveKind())) {
         if (NestedDir->hasClausesOfKind<OMPNumTeamsClause>()) {
-          const Expr *NumTeams =
+          const ArrayRef<const Expr *> NumTeams =
               NestedDir->getSingleClause<OMPNumTeamsClause>()->getNumTeams();
-          if (NumTeams->isIntegerConstantExpr(CGF.getContext()))
+          for (unsigned I = 0; I < NumTeams.size(); ++I)
             if (auto Constant =
-                    NumTeams->getIntegerConstantExpr(CGF.getContext()))
-              DefaultVal = Constant->getExtValue();
+                    NumTeams[I]->getIntegerConstantExpr(CGF.getContext()))
+              DefaultVal.push_back(Constant->getExtValue());
           return NumTeams;
         }
-        DefaultVal = 0;
-        return nullptr;
+        DefaultVal.push_back(0);
+        return None;
       }
       if (isOpenMPParallelDirective(NestedDir->getDirectiveKind()) ||
           isOpenMPSimdDirective(NestedDir->getDirectiveKind())) {
-        DefaultVal = 1;
-        return nullptr;
+        DefaultVal.push_back(1);
+        return None;
       }
-      DefaultVal = 1;
-      return nullptr;
+      DefaultVal.push_back(0);
+      return None;
     }
     // A value of -1 is used to check if we need to emit no teams region
-    DefaultVal = -1;
-    return nullptr;
+    DefaultVal.push_back(-1);
+    return None;
   }
   case OMPD_target_teams:
   case OMPD_target_teams_distribute:
@@ -6601,22 +6604,23 @@ const Expr *CGOpenMPRuntime::getNumTeamsExprForTargetDirective(
   case OMPD_target_teams_distribute_parallel_for:
   case OMPD_target_teams_distribute_parallel_for_simd: {
     if (D.hasClausesOfKind<OMPNumTeamsClause>()) {
-      const Expr *NumTeams =
+      const ArrayRef<const Expr *> NumTeams =
           D.getSingleClause<OMPNumTeamsClause>()->getNumTeams();
-      if (NumTeams->isIntegerConstantExpr(CGF.getContext()))
-        if (auto Constant = NumTeams->getIntegerConstantExpr(CGF.getContext()))
-          DefaultVal = Constant->getExtValue();
+      for (unsigned I = 0; I < NumTeams.size(); ++I)
+        if (auto Constant =
+                NumTeams[I]->getIntegerConstantExpr(CGF.getContext()))
+          DefaultVal.push_back(Constant->getExtValue());
       return NumTeams;
     }
-    DefaultVal = 0;
-    return nullptr;
+    DefaultVal.push_back(0);
+    return None;
   }
   case OMPD_target_parallel:
   case OMPD_target_parallel_for:
   case OMPD_target_parallel_for_simd:
   case OMPD_target_simd:
-    DefaultVal = 1;
-    return nullptr;
+    DefaultVal.push_back(1);
+    return None;
   case OMPD_parallel:
   case OMPD_for:
   case OMPD_parallel_for:
@@ -6683,26 +6687,40 @@ const Expr *CGOpenMPRuntime::getNumTeamsExprForTargetDirective(
   llvm_unreachable("Unexpected directive kind.");
 }
 
-llvm::Value *CGOpenMPRuntime::emitNumTeamsForTargetDirective(
+std::pair<llvm::Value *, llvm::Value *>
+CGOpenMPRuntime::emitNumTeamsForTargetDirective(
     CodeGenFunction &CGF, const OMPExecutableDirective &D) {
   assert(!CGF.getLangOpts().OpenMPIsDevice &&
          "Clauses associated with the teams directive expected to be emitted "
          "only for the host!");
-  CGBuilderTy &Bld = CGF.Builder;
-  int32_t DefaultNT = -1;
-  const Expr *NumTeams = getNumTeamsExprForTargetDirective(CGF, D, DefaultNT);
-  if (NumTeams != nullptr) {
+  SmallVector<int32_t, 4> DefaultNT;
+  const Optional<ArrayRef<const Expr *>> NumTeams =
+      getNumTeamsExprForTargetDirective(CGF, D, DefaultNT);
+  if (NumTeams) {
+    auto EmitNumTeams =
+        [&CGF, NumTeams]() -> std::pair<llvm::Value *, llvm::Value *> {
+      ASTContext &C = CGF.CGM.getContext();
+      llvm::APInt NumTeamsSize(/*numBits=*/32, NumTeams->size());
+      QualType NumTeamsArrayType =
+          C.getConstantArrayType(C.IntTy, NumTeamsSize, nullptr,
+                                 ArrayType::Normal, /*IndexTypeQuals=*/0);
+      Address NumTeamsAddr = CGF.CreateMemTemp(NumTeamsArrayType, ".num_teams");
+      for (unsigned I = 0; I < NumTeams->size(); ++I) {
+        LValue DimLVal = CGF.MakeAddrLValue(
+            CGF.Builder.CreateConstArrayGEP(NumTeamsAddr, I), C.IntTy);
+        CGF.EmitStoreOfScalar(CGF.EmitScalarExpr((*NumTeams)[I]), DimLVal);
+      }
+      return std::make_pair<llvm::Value *, llvm::Value *>(
+          NumTeamsAddr.getPointer(),
+          llvm::ConstantInt::get(CGF.Int32Ty, NumTeams->size()));
+    };
     OpenMPDirectiveKind DirectiveKind = D.getDirectiveKind();
-
     switch (DirectiveKind) {
     case OMPD_target: {
       const auto *CS = D.getInnermostCapturedStmt();
       CGOpenMPInnerExprInfo CGInfo(CGF, *CS);
       CodeGenFunction::CGCapturedStmtRAII CapInfoRAII(CGF, &CGInfo);
-      llvm::Value *NumTeamsVal = CGF.EmitScalarExpr(NumTeams,
-                                                  /*IgnoreResultAssign*/ true);
-      return Bld.CreateIntCast(NumTeamsVal, CGF.Int32Ty,
-                             /*isSigned=*/true);
+      return EmitNumTeams();
     }
     case OMPD_target_teams:
     case OMPD_target_teams_distribute:
@@ -6710,17 +6728,28 @@ llvm::Value *CGOpenMPRuntime::emitNumTeamsForTargetDirective(
     case OMPD_target_teams_distribute_parallel_for:
     case OMPD_target_teams_distribute_parallel_for_simd: {
       CodeGenFunction::RunCleanupsScope NumTeamsScope(CGF);
-      llvm::Value *NumTeamsVal = CGF.EmitScalarExpr(NumTeams,
-                                                  /*IgnoreResultAssign*/ true);
-      return Bld.CreateIntCast(NumTeamsVal, CGF.Int32Ty,
-                             /*isSigned=*/true);
+      return EmitNumTeams();
     }
     default:
       break;
     }
   }
 
-  return llvm::ConstantInt::get(CGF.Int32Ty, DefaultNT);
+  ASTContext &C = CGF.CGM.getContext();
+  llvm::APInt NumTeamsSize(/*numBits=*/32, DefaultNT.size());
+  QualType NumTeamsArrayType = C.getConstantArrayType(
+      C.IntTy, NumTeamsSize, nullptr, ArrayType::Normal, /*IndexTypeQuals=*/0);
+  Address NumTeamsAddr = CGF.CreateMemTemp(NumTeamsArrayType, ".num_teams");
+  for (unsigned I = 0; I < DefaultNT.size(); ++I) {
+    LValue DimLVal = CGF.MakeAddrLValue(
+        CGF.Builder.CreateConstArrayGEP(NumTeamsAddr, I), C.IntTy);
+    CGF.EmitStoreOfScalar(llvm::ConstantInt::get(CGF.Int32Ty, DefaultNT[I]),
+                          DimLVal);
+  }
+
+  return std::make_pair<llvm::Value *, llvm::Value *>(
+      NumTeamsAddr.getPointer(),
+      llvm::ConstantInt::get(CGF.Int32Ty, DefaultNT.size()));
 }
 
 static llvm::Value *getNumThreads(CodeGenFunction &CGF, const CapturedStmt *CS,
@@ -10303,7 +10332,10 @@ void CGOpenMPRuntime::emitTargetCall(
     // Return value of the runtime offloading call.
     llvm::Value *Return;
 
-    llvm::Value *NumTeams = emitNumTeamsForTargetDirective(CGF, D);
+    std::pair<llvm::Value *, llvm::Value *> Res =
+        emitNumTeamsForTargetDirective(CGF, D);
+    llvm::Value *NumTeams = Res.first;
+    llvm::Value *NumTeamsDim = Res.second;
     llvm::Value *NumThreads = emitNumThreadsForTargetDirective(CGF, D);
 
     // Source location for the ident struct
@@ -10349,12 +10381,13 @@ void CGOpenMPRuntime::emitTargetCall(
     // of teams and threads so no additional calls to the runtime are required.
     // Check the error code and execute the host version if required.
     CGF.Builder.restoreIP(
-        HasNoWait ? OMPBuilder.emitTargetKernel(
-                        CGF.Builder, Return, RTLoc, DeviceID, NumTeams,
-                        NumThreads, OutlinedFnID, KernelArgs, NoWaitKernelArgs)
-                  : OMPBuilder.emitTargetKernel(CGF.Builder, Return, RTLoc,
-                                                DeviceID, NumTeams, NumThreads,
-                                                OutlinedFnID, KernelArgs));
+        HasNoWait
+            ? OMPBuilder.emitTargetKernel(
+                  CGF.Builder, Return, RTLoc, DeviceID, NumTeams, NumTeamsDim,
+                  NumThreads, OutlinedFnID, KernelArgs, NoWaitKernelArgs)
+            : OMPBuilder.emitTargetKernel(CGF.Builder, Return, RTLoc, DeviceID,
+                                          NumTeams, NumTeamsDim, NumThreads,
+                                          OutlinedFnID, KernelArgs));
 
     llvm::BasicBlock *OffloadFailedBlock =
         CGF.createBasicBlock("omp_offload.failed");
@@ -11006,30 +11039,44 @@ void CGOpenMPRuntime::emitTeamsCall(CodeGenFunction &CGF,
   CGF.EmitRuntimeCall(RTLFn, RealArgs);
 }
 
-void CGOpenMPRuntime::emitNumTeamsClause(CodeGenFunction &CGF,
-                                         const Expr *NumTeams,
-                                         const Expr *ThreadLimit,
-                                         SourceLocation Loc) {
+void CGOpenMPRuntime::emitNumTeamsClause(
+    CodeGenFunction &CGF, const Optional<ArrayRef<const Expr *>> NumTeams,
+    const Expr *ThreadLimit, SourceLocation Loc) {
   if (!CGF.HaveInsertPoint())
     return;
 
   llvm::Value *RTLoc = emitUpdateLocation(CGF, Loc);
 
-  llvm::Value *NumTeamsVal =
-      NumTeams
-          ? CGF.Builder.CreateIntCast(CGF.EmitScalarExpr(NumTeams),
-                                      CGF.CGM.Int32Ty, /* isSigned = */ true)
-          : CGF.Builder.getInt32(0);
+  ASTContext &C = CGM.getContext();
+  llvm::APInt NumTeamsSize(/*numBits=*/32, NumTeams ? NumTeams->size() : 1);
+  QualType NumTeamsArrayType = C.getConstantArrayType(
+      C.IntTy, NumTeamsSize, nullptr, ArrayType::Normal, /*IndexTypeQuals=*/0);
+  Address NumTeamsAddr = CGF.CreateMemTemp(NumTeamsArrayType, ".num_teams");
+  if (NumTeams) {
+    for (unsigned I = 0; I < NumTeams->size(); ++I) {
+      LValue DimLVal = CGF.MakeAddrLValue(
+          CGF.Builder.CreateConstArrayGEP(NumTeamsAddr, I), C.IntTy);
+      CGF.EmitStoreOfScalar(CGF.EmitScalarExpr((*NumTeams)[I]), DimLVal);
+    }
+  } else {
+    LValue Dim0LVal = CGF.MakeAddrLValue(
+        CGF.Builder.CreateConstArrayGEP(NumTeamsAddr, 0), C.IntTy);
+    CGF.EmitStoreOfScalar(CGF.Builder.getInt32(0), Dim0LVal);
+  }
 
+  llvm::Value *NumTeamsVal = NumTeamsAddr.getPointer();
+  llvm::Value *NumTeamsDimVal =
+      llvm::ConstantInt::get(CGF.Int32Ty, NumTeams ? NumTeams->size() : 1);
   llvm::Value *ThreadLimitVal =
       ThreadLimit
           ? CGF.Builder.CreateIntCast(CGF.EmitScalarExpr(ThreadLimit),
                                       CGF.CGM.Int32Ty, /* isSigned = */ true)
           : CGF.Builder.getInt32(0);
 
-  // Build call __kmpc_push_num_teamss(&loc, global_tid, num_teams, thread_limit)
+  // Build call __kmpc_push_num_teamss(&loc, global_tid, num_teams,
+  // thread_limit)
   llvm::Value *PushNumTeamsArgs[] = {RTLoc, getThreadID(CGF, Loc), NumTeamsVal,
-                                     ThreadLimitVal};
+                                     NumTeamsDimVal, ThreadLimitVal};
   CGF.EmitRuntimeCall(OMPBuilder.getOrCreateRuntimeFunction(
                           CGM.getModule(), OMPRTL___kmpc_push_num_teams),
                       PushNumTeamsArgs);
@@ -13040,10 +13087,9 @@ void CGOpenMPSIMDRuntime::emitTeamsCall(CodeGenFunction &CGF,
   llvm_unreachable("Not supported in SIMD-only mode");
 }
 
-void CGOpenMPSIMDRuntime::emitNumTeamsClause(CodeGenFunction &CGF,
-                                             const Expr *NumTeams,
-                                             const Expr *ThreadLimit,
-                                             SourceLocation Loc) {
+void CGOpenMPSIMDRuntime::emitNumTeamsClause(
+    CodeGenFunction &CGF, const Optional<ArrayRef<const Expr *>> NumTeams,
+    const Expr *ThreadLimit, SourceLocation Loc) {
   llvm_unreachable("Not supported in SIMD-only mode");
 }
 

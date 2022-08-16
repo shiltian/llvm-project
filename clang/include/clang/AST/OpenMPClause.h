@@ -5963,60 +5963,55 @@ public:
 /// \endcode
 /// In this example directive '#pragma omp teams' has clause 'num_teams'
 /// with single expression 'n'.
-class OMPNumTeamsClause : public OMPClause, public OMPClauseWithPreInit {
+class OMPNumTeamsClause final
+    : public OMPVarListClause<OMPNumTeamsClause>,
+      public OMPClauseWithPreInit,
+      private llvm::TrailingObjects<OMPNumTeamsClause, Expr *> {
   friend class OMPClauseReader;
+  friend OMPVarListClause;
+  friend TrailingObjects;
 
-  /// Location of '('.
-  SourceLocation LParenLoc;
+  OMPNumTeamsClause(OpenMPDirectiveKind CaptureRegion, SourceLocation StartLoc,
+                    SourceLocation LParenLoc, SourceLocation EndLoc, unsigned N)
+      : OMPVarListClause<OMPNumTeamsClause>(llvm::omp::OMPC_num_teams, StartLoc,
+                                            LParenLoc, EndLoc, N),
+        OMPClauseWithPreInit(this) {}
 
-  /// NumTeams number.
-  Stmt *NumTeams = nullptr;
-
-  /// Set the NumTeams number.
-  ///
-  /// \param E NumTeams number.
-  void setNumTeams(Expr *E) { NumTeams = E; }
+  /// Build an empty clause.
+  OMPNumTeamsClause(unsigned N)
+      : OMPVarListClause<OMPNumTeamsClause>(llvm::omp::OMPC_num_teams,
+                                            SourceLocation(), SourceLocation(),
+                                            SourceLocation(), N),
+        OMPClauseWithPreInit(this) {}
 
 public:
   /// Build 'num_teams' clause.
   ///
-  /// \param E Expression associated with this clause.
+  /// \param VL Expressions associated with this clause.
   /// \param HelperE Helper Expression associated with this clause.
   /// \param CaptureRegion Innermost OpenMP region where expressions in this
   /// clause must be captured.
   /// \param StartLoc Starting location of the clause.
   /// \param LParenLoc Location of '('.
   /// \param EndLoc Ending location of the clause.
-  OMPNumTeamsClause(Expr *E, Stmt *HelperE, OpenMPDirectiveKind CaptureRegion,
-                    SourceLocation StartLoc, SourceLocation LParenLoc,
-                    SourceLocation EndLoc)
-      : OMPClause(llvm::omp::OMPC_num_teams, StartLoc, EndLoc),
-        OMPClauseWithPreInit(this), LParenLoc(LParenLoc), NumTeams(E) {
-    setPreInitStmt(HelperE, CaptureRegion);
+  static OMPNumTeamsClause *
+  Create(const ASTContext &C, OpenMPDirectiveKind CaptureRegion,
+         SourceLocation StartLoc, SourceLocation LParenLoc,
+         SourceLocation EndLoc, ArrayRef<Expr *> VL, Stmt *PreInit);
+
+  static OMPNumTeamsClause *CreateEmpty(const ASTContext &C, unsigned N);
+
+  /// Return NumTeams number.
+  ArrayRef<const Expr *> getNumTeams() const { return getVarRefs(); }
+
+  child_range children() {
+    return child_range(reinterpret_cast<Stmt **>(varlist_begin()),
+                       reinterpret_cast<Stmt **>(varlist_end()));
   }
 
-  /// Build an empty clause.
-  OMPNumTeamsClause()
-      : OMPClause(llvm::omp::OMPC_num_teams, SourceLocation(),
-                  SourceLocation()),
-        OMPClauseWithPreInit(this) {}
-
-  /// Sets the location of '('.
-  void setLParenLoc(SourceLocation Loc) { LParenLoc = Loc; }
-
-  /// Returns the location of '('.
-  SourceLocation getLParenLoc() const { return LParenLoc; }
-
-  /// Return NumTeams number.
-  Expr *getNumTeams() { return cast<Expr>(NumTeams); }
-
-  /// Return NumTeams number.
-  Expr *getNumTeams() const { return cast<Expr>(NumTeams); }
-
-  child_range children() { return child_range(&NumTeams, &NumTeams + 1); }
-
   const_child_range children() const {
-    return const_child_range(&NumTeams, &NumTeams + 1);
+    auto Children = const_cast<OMPNumTeamsClause *>(this)->children();
+    return const_child_range(Children.begin(), Children.end());
   }
 
   child_range used_children() {

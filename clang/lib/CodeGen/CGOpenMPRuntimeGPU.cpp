@@ -1231,10 +1231,9 @@ void CGOpenMPRuntimeGPU::emitNumThreadsClause(CodeGenFunction &CGF,
   // Nothing to do.
 }
 
-void CGOpenMPRuntimeGPU::emitNumTeamsClause(CodeGenFunction &CGF,
-                                              const Expr *NumTeams,
-                                              const Expr *ThreadLimit,
-                                              SourceLocation Loc) {}
+void CGOpenMPRuntimeGPU::emitNumTeamsClause(
+    CodeGenFunction &CGF, const Optional<ArrayRef<const Expr *>> NumTeams,
+    const Expr *ThreadLimit, SourceLocation Loc) {}
 
 llvm::Function *CGOpenMPRuntimeGPU::emitParallelOutlinedFunction(
     const OMPExecutableDirective &D, const VarDecl *ThreadIDVar,

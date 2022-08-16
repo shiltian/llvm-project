@@ -11743,7 +11743,8 @@ public:
       const OMPVarListLocTy &Locs, bool NoDiagnose = false,
       ArrayRef<Expr *> UnresolvedMappers = llvm::None);
   /// Called on well-formed 'num_teams' clause.
-  OMPClause *ActOnOpenMPNumTeamsClause(Expr *NumTeams, SourceLocation StartLoc,
+  OMPClause *ActOnOpenMPNumTeamsClause(ArrayRef<Expr *> NumTeams,
+                                       SourceLocation StartLoc,
                                        SourceLocation LParenLoc,
                                        SourceLocation EndLoc);
   /// Called on well-formed 'thread_limit' clause.

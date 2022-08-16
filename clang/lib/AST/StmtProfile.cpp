@@ -814,9 +814,11 @@ void OMPClauseProfiler::VisitOMPAllocateClause(const OMPAllocateClause *C) {
   VisitOMPClauseList(C);
 }
 void OMPClauseProfiler::VisitOMPNumTeamsClause(const OMPNumTeamsClause *C) {
+  VisitOMPClauseList(C);
   VistOMPClauseWithPreInit(C);
-  if (C->getNumTeams())
-    Profiler->VisitStmt(C->getNumTeams());
+  for (auto *E : C->getNumTeams())
+    if (E)
+      Profiler->VisitStmt(E);
 }
 void OMPClauseProfiler::VisitOMPThreadLimitClause(
     const OMPThreadLimitClause *C) {

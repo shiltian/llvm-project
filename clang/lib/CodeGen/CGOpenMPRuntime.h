@@ -350,12 +350,14 @@ protected:
   /// Emit a team of size one for directives such as 'target parallel' that
   /// have no associated teams construct.
   ///
-  /// Otherwise, return nullptr.
-  const Expr *getNumTeamsExprForTargetDirective(CodeGenFunction &CGF,
-                                                const OMPExecutableDirective &D,
-                                                int32_t &DefaultVal);
-  llvm::Value *emitNumTeamsForTargetDirective(CodeGenFunction &CGF,
-                                              const OMPExecutableDirective &D);
+  /// Otherwise, return None.
+  const Optional<ArrayRef<const Expr *>>
+  getNumTeamsExprForTargetDirective(CodeGenFunction &CGF,
+                                    const OMPExecutableDirective &D,
+                                    SmallVectorImpl<int32_t> &DefaultVals);
+  std::pair<llvm::Value *, llvm::Value *>
+  emitNumTeamsForTargetDirective(CodeGenFunction &CGF,
+                                 const OMPExecutableDirective &D);
   /// Emit the number of threads for a target directive.  Inspect the
   /// thread_limit clause associated with a teams construct combined or closely
   /// nested with the target directive.
@@ -1649,8 +1651,10 @@ public:
   /// for num_teams clause.
   /// \param NumTeams An integer expression of teams.
   /// \param ThreadLimit An integer expression of threads.
-  virtual void emitNumTeamsClause(CodeGenFunction &CGF, const Expr *NumTeams,
-                                  const Expr *ThreadLimit, SourceLocation Loc);
+  virtual void
+  emitNumTeamsClause(CodeGenFunction &CGF,
+                     const Optional<ArrayRef<const Expr *>> NumTeams,
+                     const Expr *ThreadLimit, SourceLocation Loc);
 
   /// Struct that keeps all the relevant information that should be kept
   /// throughout a 'target data' region.
@@ -2473,7 +2477,8 @@ public:
   /// for num_teams clause.
   /// \param NumTeams An integer expression of teams.
   /// \param ThreadLimit An integer expression of threads.
-  void emitNumTeamsClause(CodeGenFunction &CGF, const Expr *NumTeams,
+  void emitNumTeamsClause(CodeGenFunction &CGF,
+                          const Optional<ArrayRef<const Expr *>> NumTeams,
                           const Expr *ThreadLimit, SourceLocation Loc) override;
 
   /// Emit the target data mapping code associated with \a D.

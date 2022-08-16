@@ -37,7 +37,13 @@ uint32_t getThreadIdInWarp();
 uint32_t getThreadIdInBlock();
 uint32_t getKernelSize();
 uint32_t getBlockId();
+uint32_t getBlockIdX();
+uint32_t getBlockIdY();
+uint32_t getBlockIdZ();
 uint32_t getNumberOfBlocks();
+uint32_t getNumberOfBlocksX();
+uint32_t getNumberOfBlocksY();
+uint32_t getNumberOfBlocksZ();
 uint32_t getWarpId();
 uint32_t getNumberOfWarpsInBlock();
 
@@ -93,11 +99,37 @@ uint32_t getThreadIdInBlock() { return __builtin_amdgcn_workitem_id_x(); }
 
 uint32_t getKernelSize() { return __builtin_amdgcn_grid_size_x(); }
 
-uint32_t getBlockId() { return __builtin_amdgcn_workgroup_id_x(); }
+uint32_t getBlockId() {
+  uint32_t IdX = __builtin_amdgcn_workgroup_id_x;
+  uint32_t IdY = __builtin_amdgcn_workgroup_id_y;
+  uint32_t IdZ = __builtin_amdgcn_workgroup_id_z;
+
+  uint32_t DimY = getNumberOfBlocksY();
+  uint32_t DimZ = getNumberOfBlocksZ();
+
+  return IdX * DimY * DimZ + IdY * DimZ + IdZ;
+}
+uint32_t getBlockIdX() { return __builtin_amdgcn_workgroup_id_x(); }
+uint32_t getBlockIdY() { return __builtin_amdgcn_workgroup_id_y(); }
+uint32_t getBlockIdZ() { return __builtin_amdgcn_workgroup_id_z(); }
 
 uint32_t getNumberOfBlocks() {
+  return getNumberOfBlocksX() * getNumberOfBlocksY() * getNumberOfBlocksZ();
+}
+
+uint32_t getNumberOfBlocksX() {
   return getGridDim(__builtin_amdgcn_grid_size_x(),
                     __builtin_amdgcn_workgroup_size_x());
+}
+
+uint32_t getNumberOfBlocksY() {
+  return getGridDim(__builtin_amdgcn_grid_size_y(),
+                    __builtin_amdgcn_workgroup_size_y());
+}
+
+uint32_t getNumberOfBlocksZ() {
+  return getGridDim(__builtin_amdgcn_grid_size_z(),
+                    __builtin_amdgcn_workgroup_size_z());
 }
 
 uint32_t getWarpId() {
@@ -152,9 +184,27 @@ uint32_t getKernelSize() {
          mapping::getNumberOfProcessorElements();
 }
 
-uint32_t getBlockId() { return __nvvm_read_ptx_sreg_ctaid_x(); }
+uint32_t getBlockId() {
+  uint32_t IdX = __nvvm_read_ptx_sreg_ctaid_x();
+  uint32_t IdY = __nvvm_read_ptx_sreg_ctaid_y();
+  uint32_t IdZ = __nvvm_read_ptx_sreg_ctaid_z();
 
-uint32_t getNumberOfBlocks() { return __nvvm_read_ptx_sreg_nctaid_x(); }
+  uint32_t DimY = __nvvm_read_ptx_sreg_ctaid_y();
+  uint32_t DimZ = __nvvm_read_ptx_sreg_ctaid_z();
+
+  return IdX * DimY * DimZ + IdY * DimZ + IdZ;
+}
+uint32_t getBlockIdX() { return __nvvm_read_ptx_sreg_ctaid_x(); }
+uint32_t getBlockIdY() { return __nvvm_read_ptx_sreg_ctaid_y(); }
+uint32_t getBlockIdZ() { return __nvvm_read_ptx_sreg_ctaid_z(); }
+
+uint32_t getNumberOfBlocks() {
+  return __nvvm_read_ptx_sreg_nctaid_x() * __nvvm_read_ptx_sreg_nctaid_y() *
+         __nvvm_read_ptx_sreg_nctaid_z();
+}
+uint32_t getNumberOfBlocksX() { return __nvvm_read_ptx_sreg_nctaid_x(); }
+uint32_t getNumberOfBlocksY() { return __nvvm_read_ptx_sreg_nctaid_y(); }
+uint32_t getNumberOfBlocksZ() { return __nvvm_read_ptx_sreg_nctaid_z(); }
 
 uint32_t getWarpId() {
   return impl::getThreadIdInBlock() / mapping::getWarpSize();
@@ -250,6 +300,24 @@ uint32_t mapping::getBlockId() {
   return BlockId;
 }
 
+uint32_t mapping::getBlockIdX() {
+  uint32_t BlockId = impl::getBlockIdX();
+  ASSERT(BlockId < impl::getNumberOfBlocksX());
+  return BlockId;
+}
+
+uint32_t mapping::getBlockIdY() {
+  uint32_t BlockId = impl::getBlockIdY();
+  ASSERT(BlockId < impl::getNumberOfBlocksY());
+  return BlockId;
+}
+
+uint32_t mapping::getBlockIdZ() {
+  uint32_t BlockId = impl::getBlockIdZ();
+  ASSERT(BlockId < impl::getNumberOfBlocksZ());
+  return BlockId;
+}
+
 uint32_t mapping::getNumberOfWarpsInBlock() {
   uint32_t NumberOfWarpsInBlocks = impl::getNumberOfWarpsInBlock();
   ASSERT(impl::getWarpId() < NumberOfWarpsInBlocks);
@@ -259,6 +327,24 @@ uint32_t mapping::getNumberOfWarpsInBlock() {
 uint32_t mapping::getNumberOfBlocks() {
   uint32_t NumberOfBlocks = impl::getNumberOfBlocks();
   ASSERT(impl::getBlockId() < NumberOfBlocks);
+  return NumberOfBlocks;
+}
+
+uint32_t mapping::getNumberOfBlocksX() {
+  uint32_t NumberOfBlocks = impl::getNumberOfBlocksX();
+  ASSERT(impl::getBlockIdX() < NumberOfBlocks);
+  return NumberOfBlocks;
+}
+
+uint32_t mapping::getNumberOfBlocksY() {
+  uint32_t NumberOfBlocks = impl::getNumberOfBlocksY();
+  ASSERT(impl::getBlockIdY() < NumberOfBlocks);
+  return NumberOfBlocks;
+}
+
+uint32_t mapping::getNumberOfBlocksZ() {
+  uint32_t NumberOfBlocks = impl::getNumberOfBlocksZ();
+  ASSERT(impl::getBlockIdZ() < NumberOfBlocks);
   return NumberOfBlocks;
 }
 

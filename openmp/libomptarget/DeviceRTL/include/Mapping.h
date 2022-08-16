@@ -77,6 +77,9 @@ uint32_t getNumberOfWarpsInBlock();
 
 /// Return the block Id in the kernel, in [0, getKernelSize()).
 uint32_t getBlockId();
+uint32_t getBlockIdX();
+uint32_t getBlockIdY();
+uint32_t getBlockIdZ();
 
 /// Return the block size, thus number of threads in the block.
 ///
@@ -88,6 +91,9 @@ uint32_t getBlockSize(bool IsSPMD);
 
 /// Return the number of blocks in the kernel.
 uint32_t getNumberOfBlocks();
+uint32_t getNumberOfBlocksX();
+uint32_t getNumberOfBlocksY();
+uint32_t getNumberOfBlocksZ();
 
 /// Return the kernel size, thus number of threads in the kernel.
 uint32_t getKernelSize();

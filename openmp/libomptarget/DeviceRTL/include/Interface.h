@@ -165,6 +165,15 @@ double omp_get_wtick(void);
 
 double omp_get_wtime(void);
 ///}
+
+/// Multi-dim team support
+///
+/// {
+int omp_get_team_num_at_dim(int dim);
+int omp_get_num_team_at_dim(int dim);
+int omp_get_max_team_dim();
+int omp_get_team_dim();
+/// }
 }
 
 extern "C" {

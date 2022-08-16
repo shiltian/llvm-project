@@ -428,8 +428,9 @@ struct DeviceTy {
                     int32_t TgtVarsSize, AsyncInfoTy &AsyncInfo);
   int32_t runTeamRegion(void *TgtEntryPtr, void **TgtVarsPtr,
                         ptrdiff_t *TgtOffsets, int32_t TgtVarsSize,
-                        int32_t NumTeams, int32_t ThreadLimit,
-                        uint64_t LoopTripCount, AsyncInfoTy &AsyncInfo);
+                        int32_t *NumTeams, int32_t NumTeamsDim,
+                        int32_t ThreadLimit, uint64_t LoopTripCount,
+                        AsyncInfoTy &AsyncInfo);
 
   /// Synchronize device/queue/event based on \p AsyncInfo and return
   /// OFFLOAD_SUCCESS/OFFLOAD_FAIL when succeeds/fails.

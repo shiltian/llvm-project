@@ -390,6 +390,41 @@ int omp_get_num_teams(void) { return mapping::getNumberOfBlocks(); }
 int omp_get_team_num() { return mapping::getBlockId(); }
 
 int omp_get_initial_device(void) { return -1; }
+
+int omp_get_team_num_at_dim(int dim) {
+  switch (dim) {
+  case 0:
+    return mapping::getBlockIdX();
+  case 1:
+    return mapping::getBlockIdY();
+  case 2:
+    return mapping::getBlockIdZ();
+  default:
+    return 1;
+  }
+}
+
+int omp_get_num_team_at_dim(int dim) {
+  switch (dim) {
+  case 0:
+    return mapping::getNumberOfBlocksX();
+  case 1:
+    return mapping::getNumberOfBlocksY();
+  case 2:
+    return mapping::getNumberOfBlocksZ();
+  default:
+    return 1;
+  }
+}
+
+int omp_get_max_team_dim() { return 3; }
+
+int omp_get_team_dim() {
+  for (int i = 2; i >= 0; --i)
+    if (omp_get_num_team_at_dim(i) != 1)
+      return i + 1;
+  return 1;
+}
 }
 
 extern "C" {

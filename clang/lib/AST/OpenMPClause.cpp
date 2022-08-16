@@ -1177,6 +1177,25 @@ OMPMapClause::CreateEmpty(const ASTContext &C,
   return new (Mem) OMPMapClause(Sizes);
 }
 
+OMPNumTeamsClause *OMPNumTeamsClause::Create(
+    const ASTContext &C, OpenMPDirectiveKind CaptureRegion,
+    SourceLocation StartLoc, SourceLocation LParenLoc, SourceLocation EndLoc,
+    ArrayRef<Expr *> VL, Stmt *PreInit) {
+  void *Mem = C.Allocate(totalSizeToAlloc<Expr *>(VL.size()));
+  OMPNumTeamsClause *Clause = new (Mem)
+      OMPNumTeamsClause(CaptureRegion, StartLoc, LParenLoc, EndLoc, VL.size());
+  Clause->setVarRefs(VL);
+  Clause->setPreInitStmt(PreInit);
+  return Clause;
+}
+
+OMPNumTeamsClause *OMPNumTeamsClause::CreateEmpty(const ASTContext &C,
+                                                  unsigned N) {
+  void *Mem = C.Allocate(totalSizeToAlloc<Expr *>(N));
+  OMPNumTeamsClause *Clause = new (Mem) OMPNumTeamsClause(N);
+  return Clause;
+}
+
 OMPToClause *OMPToClause::Create(
     const ASTContext &C, const OMPVarListLocTy &Locs, ArrayRef<Expr *> Vars,
     ArrayRef<ValueDecl *> Declarations,
@@ -1885,9 +1904,11 @@ void OMPClausePrinter::VisitOMPDeviceClause(OMPDeviceClause *Node) {
 }
 
 void OMPClausePrinter::VisitOMPNumTeamsClause(OMPNumTeamsClause *Node) {
-  OS << "num_teams(";
-  Node->getNumTeams()->printPretty(OS, nullptr, Policy, 0);
-  OS << ")";
+  if (!Node->varlist_empty()) {
+    OS << "num_teams";
+    VisitOMPClauseList(Node, '(');
+    OS << ")";
+  }
 }
 
 void OMPClausePrinter::VisitOMPThreadLimitClause(OMPThreadLimitClause *Node) {

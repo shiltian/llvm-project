@@ -1111,7 +1111,8 @@ public:
 
   int runTargetTeamRegion(const int DeviceId, void *TgtEntryPtr, void **TgtArgs,
                           ptrdiff_t *TgtOffsets, const int ArgNum,
-                          const int TeamNum, const int ThreadLimit,
+                          const int *NumTeams, int NumTeamsDim,
+                          const int ThreadLimit,
                           const unsigned int LoopTripCount,
                           __tgt_async_info *AsyncInfo) const {
     // All args are references.
@@ -1169,7 +1170,7 @@ public:
     }
 
     unsigned int CudaBlocksPerGrid;
-    if (TeamNum <= 0) {
+    if (NumTeams[0] <= 0) {
       if (LoopTripCount > 0 && EnvNumTeams < 0) {
         if (IsSPMDGenericMode) {
           // If we reach this point, then we are executing a kernel that was
@@ -1212,8 +1213,8 @@ public:
         CudaBlocksPerGrid = DeviceData[DeviceId].NumTeams;
       }
     } else {
-      DP("Using requested number of teams %d\n", TeamNum);
-      CudaBlocksPerGrid = TeamNum;
+      DP("Using requested number of teams %d\n", NumTeams[0]);
+      CudaBlocksPerGrid = NumTeams[0];
     }
 
     if (CudaBlocksPerGrid > DeviceData[DeviceId].BlocksPerGrid) {
@@ -1230,9 +1231,14 @@ public:
          CudaBlocksPerGrid, CudaThreadsPerBlock,
          (!IsSPMDMode ? (IsGenericMode ? "Generic" : "SPMD-Generic") : "SPMD"));
 
+    unsigned GridSize[3] = {CudaBlocksPerGrid, 1, 1};
+    if (NumTeams[0])
+      for (int I = 0; I < std::min(3, NumTeamsDim); ++I)
+        GridSize[I] = NumTeams[I];
+
     CUstream Stream = getStream(DeviceId, AsyncInfo);
-    Err = cuLaunchKernel(KernelInfo->Func, CudaBlocksPerGrid, /* gridDimY */ 1,
-                         /* gridDimZ */ 1, CudaThreadsPerBlock,
+    Err = cuLaunchKernel(KernelInfo->Func, GridSize[0], GridSize[1],
+                         GridSize[2], CudaThreadsPerBlock,
                          /* blockDimY */ 1, /* blockDimZ */ 1,
                          DynamicMemorySize, Stream, &Args[0], nullptr);
     if (!checkResult(Err, "Error returned from cuLaunchKernel\n"))
@@ -1710,7 +1716,8 @@ int32_t __tgt_rtl_data_delete(int32_t DeviceId, void *TgtPtr) {
 
 int32_t __tgt_rtl_run_target_team_region(int32_t DeviceId, void *TgtEntryPtr,
                                          void **TgtArgs, ptrdiff_t *TgtOffsets,
-                                         int32_t ArgNum, int32_t TeamNum,
+                                         int32_t ArgNum, int32_t *NumTeams,
+                                         int32_t NumTeamsDim,
                                          int32_t ThreadLimit,
                                          uint64_t LoopTripcount) {
   assert(DeviceRTL.isValidDeviceId(DeviceId) && "device_id is invalid");
@@ -1718,8 +1725,8 @@ int32_t __tgt_rtl_run_target_team_region(int32_t DeviceId, void *TgtEntryPtr,
 
   __tgt_async_info AsyncInfo;
   const int32_t Rc = __tgt_rtl_run_target_team_region_async(
-      DeviceId, TgtEntryPtr, TgtArgs, TgtOffsets, ArgNum, TeamNum, ThreadLimit,
-      LoopTripcount, &AsyncInfo);
+      DeviceId, TgtEntryPtr, TgtArgs, TgtOffsets, ArgNum, NumTeams, NumTeamsDim,
+      ThreadLimit, LoopTripcount, &AsyncInfo);
   if (Rc != OFFLOAD_SUCCESS)
     return OFFLOAD_FAIL;
 
@@ -1728,16 +1735,16 @@ int32_t __tgt_rtl_run_target_team_region(int32_t DeviceId, void *TgtEntryPtr,
 
 int32_t __tgt_rtl_run_target_team_region_async(
     int32_t DeviceId, void *TgtEntryPtr, void **TgtArgs, ptrdiff_t *TgtOffsets,
-    int32_t ArgNum, int32_t TeamNum, int32_t ThreadLimit,
+    int32_t ArgNum, int32_t *NumTeams, int32_t NumTeamsDim, int32_t ThreadLimit,
     uint64_t LoopTripcount, __tgt_async_info *AsyncInfoPtr) {
   assert(DeviceRTL.isValidDeviceId(DeviceId) && "device_id is invalid");
 
   if (DeviceRTL.setContext(DeviceId) != OFFLOAD_SUCCESS)
     return OFFLOAD_FAIL;
 
-  return DeviceRTL.runTargetTeamRegion(DeviceId, TgtEntryPtr, TgtArgs,
-                                       TgtOffsets, ArgNum, TeamNum, ThreadLimit,
-                                       LoopTripcount, AsyncInfoPtr);
+  return DeviceRTL.runTargetTeamRegion(
+      DeviceId, TgtEntryPtr, TgtArgs, TgtOffsets, ArgNum, NumTeams, NumTeamsDim,
+      ThreadLimit, LoopTripcount, AsyncInfoPtr);
 }
 
 int32_t __tgt_rtl_run_target_region(int32_t DeviceId, void *TgtEntryPtr,
@@ -1761,10 +1768,10 @@ int32_t __tgt_rtl_run_target_region_async(int32_t DeviceId, void *TgtEntryPtr,
                                           __tgt_async_info *AsyncInfoPtr) {
   assert(DeviceRTL.isValidDeviceId(DeviceId) && "device_id is invalid");
   // Context is set in __tgt_rtl_run_target_team_region_async.
+  int NumTeams = 1;
   return __tgt_rtl_run_target_team_region_async(
-      DeviceId, TgtEntryPtr, TgtArgs, TgtOffsets, ArgNum,
-      /* team num*/ 1, /* thread_limit */ 1, /* loop_tripcount */ 0,
-      AsyncInfoPtr);
+      DeviceId, TgtEntryPtr, TgtArgs, TgtOffsets, ArgNum, &NumTeams, 1,
+      /* thread_limit */ 1, /* loop_tripcount */ 0, AsyncInfoPtr);
 }
 
 int32_t __tgt_rtl_synchronize(int32_t DeviceId,

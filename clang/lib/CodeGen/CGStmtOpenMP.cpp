@@ -6687,7 +6687,8 @@ static void emitCommonOMPTeamsDirective(CodeGenFunction &CGF,
   const auto *NT = S.getSingleClause<OMPNumTeamsClause>();
   const auto *TL = S.getSingleClause<OMPThreadLimitClause>();
   if (NT || TL) {
-    const Expr *NumTeams = NT ? NT->getNumTeams() : nullptr;
+    const Optional<ArrayRef<const Expr *>> NumTeams =
+        NT ? NT->getNumTeams() : None;
     const Expr *ThreadLimit = TL ? TL->getThreadLimit() : nullptr;
 
     CGF.CGM.getOpenMPRuntime().emitNumTeamsClause(CGF, NumTeams, ThreadLimit,

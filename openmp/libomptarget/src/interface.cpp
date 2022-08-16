@@ -208,7 +208,8 @@ EXTERN void __tgt_target_data_update_nowait_mapper(
 ///                    launch, 0 indicates it was unspecified.
 /// \param HostPtr  The pointer to the host function registered with the kernel.
 /// \param Args     All arguments to this kernel launch (see struct definition).
-EXTERN int __tgt_target_kernel(ident_t *Loc, int64_t DeviceId, int32_t NumTeams,
+EXTERN int __tgt_target_kernel(ident_t *Loc, int64_t DeviceId,
+                               int32_t *NumTeams, int32_t NumTeamsDim,
                                int32_t ThreadLimit, void *HostPtr,
                                __tgt_kernel_arguments *Args) {
   TIMESCOPE_WITH_IDENT(Loc);
@@ -238,7 +239,7 @@ EXTERN int __tgt_target_kernel(ident_t *Loc, int64_t DeviceId, int32_t NumTeams,
   }
 #endif
 
-  bool IsTeams = NumTeams != -1;
+  bool IsTeams = NumTeams[0] != -1;
   if (!IsTeams)
     NumTeams = 0;
 
@@ -246,8 +247,8 @@ EXTERN int __tgt_target_kernel(ident_t *Loc, int64_t DeviceId, int32_t NumTeams,
   AsyncInfoTy AsyncInfo(Device);
   int Rc = target(Loc, Device, HostPtr, Args->NumArgs, Args->ArgBasePtrs,
                   Args->ArgPtrs, Args->ArgSizes, Args->ArgTypes, Args->ArgNames,
-                  Args->ArgMappers, NumTeams, ThreadLimit, Args->Tripcount,
-                  IsTeams, AsyncInfo);
+                  Args->ArgMappers, NumTeams, NumTeamsDim, ThreadLimit,
+                  Args->Tripcount, IsTeams, AsyncInfo);
   if (Rc == OFFLOAD_SUCCESS)
     Rc = AsyncInfo.synchronize();
   handleTargetOutcome(Rc == OFFLOAD_SUCCESS, Loc);
@@ -261,7 +262,7 @@ EXTERN int __tgt_target_kernel_nowait(
     int32_t NoAliasDepNum, void *NoAliasDepList) {
   TIMESCOPE_WITH_IDENT(Loc);
 
-  return __tgt_target_kernel(Loc, DeviceId, NumTeams, ThreadLimit, HostPtr,
+  return __tgt_target_kernel(Loc, DeviceId, &NumTeams, 1, ThreadLimit, HostPtr,
                              Args);
 }
 

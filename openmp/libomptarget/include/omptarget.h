@@ -332,8 +332,8 @@ void __tgt_target_data_update_nowait_mapper(
 // same action as data_end above. The following types are used; this
 // function returns 0 if it was able to transfer the execution to a
 // target and an int different from zero otherwise.
-int __tgt_target_kernel(ident_t *Loc, int64_t DeviceId, int32_t NumTeams,
-                        int32_t ThreadLimit, void *HostPtr,
+int __tgt_target_kernel(ident_t *Loc, int64_t DeviceId, int32_t *NumTeams,
+                        int32_t NumTeamsDim, int32_t ThreadLimit, void *HostPtr,
                         __tgt_kernel_arguments *Args);
 int __tgt_target_kernel_nowait(ident_t *Loc, int64_t DeviceId, int32_t NumTeams,
                                int32_t ThreadLimit, void *HostPtr,

@@ -598,16 +598,16 @@ bool DeviceTy::printDeviceInfo(int32_t RTLDevId) {
 // Run team region on device.
 int32_t DeviceTy::runTeamRegion(void *TgtEntryPtr, void **TgtVarsPtr,
                                 ptrdiff_t *TgtOffsets, int32_t TgtVarsSize,
-                                int32_t NumTeams, int32_t ThreadLimit,
-                                uint64_t LoopTripCount,
+                                int32_t *NumTeams, int32_t NumTeamsDim,
+                                int32_t ThreadLimit, uint64_t LoopTripCount,
                                 AsyncInfoTy &AsyncInfo) {
   if (!RTL->run_team_region_async || !RTL->synchronize)
     return RTL->run_team_region(RTLDeviceID, TgtEntryPtr, TgtVarsPtr,
-                                TgtOffsets, TgtVarsSize, NumTeams, ThreadLimit,
-                                LoopTripCount);
-  return RTL->run_team_region_async(RTLDeviceID, TgtEntryPtr, TgtVarsPtr,
-                                    TgtOffsets, TgtVarsSize, NumTeams,
-                                    ThreadLimit, LoopTripCount, AsyncInfo);
+                                TgtOffsets, TgtVarsSize, NumTeams, NumTeamsDim,
+                                ThreadLimit, LoopTripCount);
+  return RTL->run_team_region_async(
+      RTLDeviceID, TgtEntryPtr, TgtVarsPtr, TgtOffsets, TgtVarsSize, NumTeams,
+      NumTeamsDim, ThreadLimit, LoopTripCount, AsyncInfo);
 }
 
 // Whether data can be copied to DstDevice directly

@@ -51,10 +51,11 @@ struct RTLInfoTy {
   typedef int32_t(run_region_async_ty)(int32_t, void *, void **, ptrdiff_t *,
                                        int32_t, __tgt_async_info *);
   typedef int32_t(run_team_region_ty)(int32_t, void *, void **, ptrdiff_t *,
-                                      int32_t, int32_t, int32_t, uint64_t);
+                                      int32_t, int32_t *, int32_t, int32_t,
+                                      uint64_t);
   typedef int32_t(run_team_region_async_ty)(int32_t, void *, void **,
-                                            ptrdiff_t *, int32_t, int32_t,
-                                            int32_t, uint64_t,
+                                            ptrdiff_t *, int32_t, int32_t *,
+                                            int32_t, int32_t, uint64_t,
                                             __tgt_async_info *);
   typedef int64_t(init_requires_ty)(int64_t);
   typedef int32_t(synchronize_ty)(int32_t, __tgt_async_info *);

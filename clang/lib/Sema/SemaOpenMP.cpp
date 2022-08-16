@@ -15049,9 +15049,6 @@ OMPClause *Sema::ActOnOpenMPSingleExprClause(OpenMPClauseKind Kind, Expr *Expr,
   case OMPC_ordered:
     Res = ActOnOpenMPOrderedClause(StartLoc, EndLoc, LParenLoc, Expr);
     break;
-  case OMPC_num_teams:
-    Res = ActOnOpenMPNumTeamsClause(Expr, StartLoc, LParenLoc, EndLoc);
-    break;
   case OMPC_thread_limit:
     Res = ActOnOpenMPThreadLimitClause(Expr, StartLoc, LParenLoc, EndLoc);
     break;
@@ -17563,6 +17560,9 @@ OMPClause *Sema::ActOnOpenMPVarListClause(OpenMPClauseKind Kind,
         static_cast<OpenMPMapClauseKind>(ExtraModifier), Data.IsMapTypeImplicit,
         ExtraModifierLoc, ColonLoc, VarList, Locs);
     break;
+  case OMPC_num_teams:
+    Res = ActOnOpenMPNumTeamsClause(VarList, StartLoc, LParenLoc, EndLoc);
+    break;
   case OMPC_to:
     Res =
         ActOnOpenMPToClause(Data.MotionModifiers, Data.MotionModifiersLoc,
@@ -17634,7 +17634,6 @@ OMPClause *Sema::ActOnOpenMPVarListClause(OpenMPClauseKind Kind,
   case OMPC_device:
   case OMPC_threads:
   case OMPC_simd:
-  case OMPC_num_teams:
   case OMPC_thread_limit:
   case OMPC_priority:
   case OMPC_grainsize:
@@ -22170,31 +22169,36 @@ const ValueDecl *Sema::getOpenMPDeclareMapperVarName() const {
   return cast<DeclRefExpr>(DSAStack->getDeclareMapperVarRef())->getDecl();
 }
 
-OMPClause *Sema::ActOnOpenMPNumTeamsClause(Expr *NumTeams,
+OMPClause *Sema::ActOnOpenMPNumTeamsClause(ArrayRef<Expr *> NumTeams,
                                            SourceLocation StartLoc,
                                            SourceLocation LParenLoc,
                                            SourceLocation EndLoc) {
-  Expr *ValExpr = NumTeams;
   Stmt *HelperValStmt = nullptr;
 
   // OpenMP [teams Constrcut, Restrictions]
   // The num_teams expression must evaluate to a positive integer value.
-  if (!isNonNegativeIntegerValue(ValExpr, *this, OMPC_num_teams,
-                                 /*StrictlyPositive=*/true))
-    return nullptr;
+  for (Expr *ValExpr : NumTeams)
+    if (!isNonNegativeIntegerValue(ValExpr, *this, OMPC_num_teams,
+                                   /*StrictlyPositive=*/true))
+      return nullptr;
 
   OpenMPDirectiveKind DKind = DSAStack->getCurrentDirective();
   OpenMPDirectiveKind CaptureRegion =
       getOpenMPCaptureRegionForClause(DKind, OMPC_num_teams, LangOpts.OpenMP);
+  SmallVector<Expr *, 4> VL(NumTeams.begin(), NumTeams.end());
   if (CaptureRegion != OMPD_unknown && !CurContext->isDependentContext()) {
-    ValExpr = MakeFullExpr(ValExpr).get();
     llvm::MapVector<const Expr *, DeclRefExpr *> Captures;
-    ValExpr = tryBuildCapture(*this, ValExpr, Captures).get();
+    for (unsigned I = 0; I < NumTeams.size(); ++I) {
+      Expr *ValExpr = NumTeams[I];
+      ValExpr = MakeFullExpr(ValExpr).get();
+      ValExpr = tryBuildCapture(*this, ValExpr, Captures).get();
+      VL[I] = ValExpr;
+    }
     HelperValStmt = buildPreInits(Context, Captures);
   }
 
-  return new (Context) OMPNumTeamsClause(ValExpr, HelperValStmt, CaptureRegion,
-                                         StartLoc, LParenLoc, EndLoc);
+  return OMPNumTeamsClause::Create(Context, CaptureRegion, StartLoc, LParenLoc,
+                                   EndLoc, VL, HelperValStmt);
 }
 
 OMPClause *Sema::ActOnOpenMPThreadLimitClause(Expr *ThreadLimit,

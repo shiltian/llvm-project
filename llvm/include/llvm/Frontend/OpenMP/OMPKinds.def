@@ -372,7 +372,7 @@ __OMP_RTL(__kmpc_omp_wait_deps, false, Void, IdentPtr, Int32, Int32,
 __OMP_RTL(__kmpc_cancellationpoint, false, Int32, IdentPtr, Int32, Int32)
 
 __OMP_RTL(__kmpc_fork_teams, true, Void, IdentPtr, Int32, ParallelTaskPtr)
-__OMP_RTL(__kmpc_push_num_teams, false, Void, IdentPtr, Int32, Int32, Int32)
+__OMP_RTL(__kmpc_push_num_teams, false, Void, IdentPtr, Int32, Int32Ptr, Int32, Int32)
 
 __OMP_RTL(__kmpc_copyprivate, false, Void, IdentPtr, Int32, SizeTy, VoidPtr,
           CopyFunctionPtr, Int32)
@@ -416,8 +416,8 @@ __OMP_RTL(__tgt_target_teams_mapper, false, Int32, IdentPtr, Int64, VoidPtr, Int
 __OMP_RTL(__tgt_target_teams_nowait_mapper, false, Int32, IdentPtr, Int64,
           VoidPtr, Int32, VoidPtrPtr, VoidPtrPtr, Int64Ptr, Int64Ptr,
           VoidPtrPtr, VoidPtrPtr, Int32, Int32, Int32, VoidPtr, Int32, VoidPtr)
-__OMP_RTL(__tgt_target_kernel, false, Int32, IdentPtr, Int64, Int32, Int32,
-          VoidPtr, KernelArgsPtr)
+__OMP_RTL(__tgt_target_kernel, false, Int32, IdentPtr, Int64, Int32Ptr, Int32,
+          Int32, VoidPtr, KernelArgsPtr)
 __OMP_RTL(__tgt_target_kernel_nowait, false, Int32, IdentPtr, Int64, Int32,
           Int32, VoidPtr, KernelArgsPtr, Int32, VoidPtr, Int32, VoidPtr)
 __OMP_RTL(__tgt_register_requires, false, Void, Int64)

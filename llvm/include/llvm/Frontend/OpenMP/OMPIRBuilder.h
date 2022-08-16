@@ -862,8 +862,8 @@ public:
   /// \param NoWaitArgs Optional array of arguments to the nowait kernel.
   InsertPointTy emitTargetKernel(const LocationDescription &Loc, Value *&Return,
                                  Value *Ident, Value *DeviceID, Value *NumTeams,
-                                 Value *NumThreads, Value *HostPtr,
-                                 ArrayRef<Value *> KernelArgs,
+                                 Value *NumTeamsDim, Value *NumThreads,
+                                 Value *HostPtr, ArrayRef<Value *> KernelArgs,
                                  ArrayRef<Value *> NoWaitArgs = {});
 
   /// Generate a barrier runtime call.

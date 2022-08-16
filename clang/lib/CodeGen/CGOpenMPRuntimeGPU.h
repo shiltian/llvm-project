@@ -202,7 +202,8 @@ public:
   // as these numbers are obtained through the PTX grid and block configuration.
   /// \param NumTeams An integer expression of teams.
   /// \param ThreadLimit An integer expression of threads.
-  void emitNumTeamsClause(CodeGenFunction &CGF, const Expr *NumTeams,
+  void emitNumTeamsClause(CodeGenFunction &CGF,
+                          const Optional<ArrayRef<const Expr *>> NumTeams,
                           const Expr *ThreadLimit, SourceLocation Loc) override;
 
   /// Emits inlined function for the specified OpenMP parallel

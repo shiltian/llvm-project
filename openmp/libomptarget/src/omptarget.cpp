@@ -192,9 +192,10 @@ static int initLibrary(DeviceTy &Device) {
         DP("Has pending ctors... call now\n");
         for (auto &Entry : Lib.second.PendingCtors) {
           void *Ctor = Entry;
+          int NumTeams = 1;
           int Rc = target(nullptr, Device, Ctor, 0, nullptr, nullptr, nullptr,
-                          nullptr, nullptr, nullptr, 1, 1, 0, true /*team*/,
-                          AsyncInfo);
+                          nullptr, nullptr, nullptr, &NumTeams, 1, 1, 0,
+                          true /*team*/, AsyncInfo);
           if (Rc != OFFLOAD_SUCCESS) {
             REPORT("Running ctor " DPxMOD " failed.\n", DPxPTR(Ctor));
             return OFFLOAD_FAIL;
@@ -1490,9 +1491,9 @@ static int processDataAfter(ident_t *Loc, int64_t DeviceId, void *HostPtr,
 /// integer different from zero otherwise.
 int target(ident_t *Loc, DeviceTy &Device, void *HostPtr, int32_t ArgNum,
            void **ArgBases, void **Args, int64_t *ArgSizes, int64_t *ArgTypes,
-           map_var_info_t *ArgNames, void **ArgMappers, int32_t TeamNum,
-           int32_t ThreadLimit, uint64_t Tripcount, int IsTeamConstruct,
-           AsyncInfoTy &AsyncInfo) {
+           map_var_info_t *ArgNames, void **ArgMappers, int32_t *NumTeams,
+           int32_t NumTeamsDim, int32_t ThreadLimit, uint64_t Tripcount,
+           int IsTeamConstruct, AsyncInfoTy &AsyncInfo) {
   int32_t DeviceId = Device.DeviceID;
   TableMap *TM = getTableMap(HostPtr);
   // No map for this host pointer found!
@@ -1552,8 +1553,8 @@ int target(ident_t *Loc, DeviceTy &Device, void *HostPtr, int32_t ArgNum,
         IsTeamConstruct ? "runTargetTeamRegion" : "runTargetRegion", Loc);
     if (IsTeamConstruct)
       Ret = Device.runTeamRegion(TgtEntryPtr, TgtArgs.data(), TgtOffsets.data(),
-                                 TgtArgs.size(), TeamNum, ThreadLimit,
-                                 Tripcount, AsyncInfo);
+                                 TgtArgs.size(), NumTeams, NumTeamsDim,
+                                 ThreadLimit, Tripcount, AsyncInfo);
     else
       Ret = Device.runRegion(TgtEntryPtr, TgtArgs.data(), TgtOffsets.data(),
                              TgtArgs.size(), AsyncInfo);
