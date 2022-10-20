@@ -1533,7 +1533,7 @@ int32_t __tgt_rtl_is_valid_binary(__tgt_device_image *Image) {
 
 int32_t __tgt_rtl_is_valid_binary_info(__tgt_device_image *Image,
                                        __tgt_image_info *Info) {
-  if (!__tgt_rtl_is_valid_binary(Image))
+  if (!::__tgt_rtl_is_valid_binary(Image))
     return false;
 
   // A subarchitecture was not specified. Assume it is compatible.
