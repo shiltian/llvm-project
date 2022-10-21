@@ -209,6 +209,10 @@ bool mapping::isLeaderInWarp() {
   return utils::popc(Active & LaneMaskLT) == 0;
 }
 
+bool mapping::isMainThreadInBlock() {
+  return impl::getThreadIdInBlock() == 0;
+}
+
 LaneMaskTy mapping::activemask() { return impl::activemask(); }
 
 LaneMaskTy mapping::lanemaskLT() { return impl::lanemaskLT(); }
