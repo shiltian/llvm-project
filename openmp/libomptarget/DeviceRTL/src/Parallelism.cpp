@@ -85,6 +85,7 @@ void __kmpc_parallel_51(IdentTy *ident, int32_t, int32_t if_expr,
   FunctionTracingRAII();
 
   uint32_t TId = mapping::getThreadIdInBlock();
+  bool IsMainInBlock = mapping::isMainThreadInBlock();
 
   // Assert the parallelism level is zero if disabled by the user.
   ASSERT((config::mayUseNestedParallelism() || icv::Level == 0) &&
@@ -115,14 +116,14 @@ void __kmpc_parallel_51(IdentTy *ident, int32_t, int32_t if_expr,
       // last or the other updates will cause a thread specific state to be
       // created.
       state::ValueRAII ParallelTeamSizeRAII(state::ParallelTeamSize, NumThreads,
-                                            1u, TId == 0, ident,
+                                            1u, IsMainInBlock, ident,
                                             /* ForceTeamState */ true);
-      state::ValueRAII ActiveLevelRAII(icv::ActiveLevel, 1u, 0u, TId == 0,
+      state::ValueRAII ActiveLevelRAII(icv::ActiveLevel, 1u, 0u, IsMainInBlock,
                                        ident, /* ForceTeamState */ true);
-      state::ValueRAII LevelRAII(icv::Level, 1u, 0u, TId == 0, ident,
+      state::ValueRAII LevelRAII(icv::Level, 1u, 0u, IsMainInBlock, ident,
                                  /* ForceTeamState */ true);
 
-      // Synchronize all threads after the main thread (TId == 0) set up the
+      // Synchronize all threads after the main thread (IsMainInBlock) set up the
       // team state properly.
       synchronize::threadsAligned();
 

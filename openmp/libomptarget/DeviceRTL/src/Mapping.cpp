@@ -19,6 +19,8 @@
 
 #include "llvm/Frontend/OpenMP/OMPGridValues.h"
 
+extern "C" int32_t __teams_to_threads_ratio;
+
 using namespace _OMP;
 
 namespace _OMP {
@@ -178,9 +180,9 @@ uint32_t getWarpSize() { return getGridValue().GV_Warp_Size; }
 ///{
 
 static bool isInLastWarp() {
-  uint32_t MainTId = (mapping::getNumberOfProcessorElements() - 1) &
+  uint32_t MainTId = (impl::getNumHardwareThreadsInBlock() - 1) &
                      ~(mapping::getWarpSize() - 1);
-  return mapping::getThreadIdInBlock() == MainTId;
+  return impl::getThreadIdInBlock() == MainTId;
 }
 
 bool mapping::isMainThreadInGenericMode(bool IsSPMD) {
@@ -197,7 +199,7 @@ bool mapping::isMainThreadInGenericMode() {
 
 bool mapping::isInitialThreadInLevel0(bool IsSPMD) {
   if (IsSPMD)
-    return mapping::getThreadIdInBlock() == 0;
+    return impl::getThreadIdInBlock() == 0;
   return isInLastWarp();
 }
 
@@ -207,65 +209,80 @@ bool mapping::isLeaderInWarp() {
   return utils::popc(Active & LaneMaskLT) == 0;
 }
 
+bool mapping::isMainThreadInBlock() {
+  return impl::getThreadIdInBlock() == 0;
+}
+
 LaneMaskTy mapping::activemask() { return impl::activemask(); }
 
 LaneMaskTy mapping::lanemaskLT() { return impl::lanemaskLT(); }
 
 LaneMaskTy mapping::lanemaskGT() { return impl::lanemaskGT(); }
 
-uint32_t mapping::getThreadIdInWarp() {
-  uint32_t ThreadIdInWarp = impl::getThreadIdInWarp();
-  ASSERT(ThreadIdInWarp < impl::getWarpSize());
-  return ThreadIdInWarp;
-}
+uint32_t mapping::getThreadIdInWarp() { return impl::getThreadIdInWarp(); }
 
 uint32_t mapping::getThreadIdInBlock() {
-  uint32_t ThreadIdInBlock = impl::getThreadIdInBlock();
-  ASSERT(ThreadIdInBlock < impl::getNumHardwareThreadsInBlock());
-  return ThreadIdInBlock;
+  if (__teams_to_threads_ratio > 1)
+    return impl::getThreadIdInBlock() +
+           (impl::getBlockId() % __teams_to_threads_ratio) * getBlockSize();
+  return impl::getThreadIdInBlock();
 }
 
-uint32_t mapping::getWarpSize() { return impl::getWarpSize(); }
-
-uint32_t mapping::getBlockSize(bool IsSPMD) {
-  uint32_t BlockSize = mapping::getNumberOfProcessorElements() -
-                       (!IsSPMD * impl::getWarpSize());
-  return BlockSize;
-}
 uint32_t mapping::getBlockSize() {
   return mapping::getBlockSize(mapping::isSPMDMode());
 }
 
-uint32_t mapping::getKernelSize() { return impl::getKernelSize(); }
-
-uint32_t mapping::getWarpId() {
-  uint32_t WarpID = impl::getWarpId();
-  ASSERT(WarpID < impl::getNumberOfWarpsInBlock());
-  return WarpID;
+uint32_t mapping::getKernelSize() {
+  if (__teams_to_threads_ratio > 1)
+    return impl::getKernelSize() / __teams_to_threads_ratio;
+  return impl::getKernelSize();
 }
 
 uint32_t mapping::getBlockId() {
-  uint32_t BlockId = impl::getBlockId();
-  ASSERT(BlockId < impl::getNumberOfBlocks());
-  return BlockId;
-}
-
-uint32_t mapping::getNumberOfWarpsInBlock() {
-  uint32_t NumberOfWarpsInBlocks = impl::getNumberOfWarpsInBlock();
-  ASSERT(impl::getWarpId() < NumberOfWarpsInBlocks);
-  return NumberOfWarpsInBlocks;
+  if (__teams_to_threads_ratio > 1)
+    return impl::getBlockId() / __teams_to_threads_ratio;
+  return impl::getBlockId();
 }
 
 uint32_t mapping::getNumberOfBlocks() {
-  uint32_t NumberOfBlocks = impl::getNumberOfBlocks();
-  ASSERT(impl::getBlockId() < NumberOfBlocks);
-  return NumberOfBlocks;
+  if (__teams_to_threads_ratio > 1)
+    return impl::getNumberOfBlocks() / __teams_to_threads_ratio;
+  return impl::getNumberOfBlocks();
 }
 
 uint32_t mapping::getNumberOfProcessorElements() {
   uint32_t NumberOfProcessorElements = impl::getNumHardwareThreadsInBlock();
   ASSERT(impl::getThreadIdInBlock() < NumberOfProcessorElements);
+  if (__teams_to_threads_ratio > 1)
+    NumberOfProcessorElements *= __teams_to_threads_ratio;
   return NumberOfProcessorElements;
+}
+
+uint32_t mapping::getWarpSize() { return impl::getWarpSize(); }
+
+uint32_t mapping::getBlockSize(bool IsSPMD) {
+  uint32_t BlockSize =
+      mapping::getNumberOfProcessorElements() - (!IsSPMD * impl::getWarpSize());
+  if (__teams_to_threads_ratio > 1)
+    BlockSize *= __teams_to_threads_ratio;
+  return BlockSize;
+}
+
+uint32_t mapping::getWarpId() {
+  uint32_t WarpID = impl::getWarpId();
+  ASSERT(WarpID < impl::getNumberOfWarpsInBlock());
+  if (__teams_to_threads_ratio > 1)
+    WarpID +=
+           (impl::getBlockId() % __teams_to_threads_ratio) * impl::getNumberOfWarpsInBlock();
+  return WarpID;
+}
+
+uint32_t mapping::getNumberOfWarpsInBlock() {
+  uint32_t NumberOfWarpsInBlocks = impl::getNumberOfWarpsInBlock();
+  ASSERT(impl::getWarpId() < NumberOfWarpsInBlocks);
+  if (__teams_to_threads_ratio > 1)
+    NumberOfWarpsInBlocks *= __teams_to_threads_ratio;
+  return NumberOfWarpsInBlocks;
 }
 
 ///}
@@ -301,7 +318,7 @@ __attribute__((noinline)) uint32_t __kmpc_get_hardware_num_threads_in_block() {
 
 __attribute__((noinline)) uint32_t __kmpc_get_warp_size() {
   FunctionTracingRAII();
-  return impl::getWarpSize();
+  return mapping::getWarpSize();
 }
 }
 #pragma omp end declare target
