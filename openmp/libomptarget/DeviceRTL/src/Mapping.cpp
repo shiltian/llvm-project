@@ -262,7 +262,7 @@ uint32_t mapping::getWarpSize() { return impl::getWarpSize(); }
 
 uint32_t mapping::getBlockSize(bool IsSPMD) {
   uint32_t BlockSize =
-      mapping::getNumberOfProcessorElements() - (!IsSPMD * impl::getWarpSize());
+      impl::getNumHardwareThreadsInBlock() - (!IsSPMD * impl::getWarpSize());
   if (__teams_to_threads_ratio > 1)
     BlockSize *= __teams_to_threads_ratio;
   return BlockSize;
@@ -313,7 +313,7 @@ __attribute__((noinline)) uint32_t __kmpc_get_hardware_thread_id_in_block() {
 
 __attribute__((noinline)) uint32_t __kmpc_get_hardware_num_threads_in_block() {
   FunctionTracingRAII();
-  return impl::getNumHardwareThreadsInBlock();
+  return mapping::getNumHardwareThreadsInBlock();
 }
 
 __attribute__((noinline)) uint32_t __kmpc_get_warp_size() {
