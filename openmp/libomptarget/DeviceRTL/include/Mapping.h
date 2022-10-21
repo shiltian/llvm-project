@@ -51,6 +51,8 @@ bool isInitialThreadInLevel0(bool IsSPMD);
 /// in the warp.
 bool isLeaderInWarp();
 
+bool isMainThreadInBlock();
+
 /// Return a mask describing all active threads in the warp.
 LaneMaskTy activemask();
 
