@@ -57,6 +57,8 @@ using namespace llvm;
 using namespace llvm::opt;
 using namespace llvm::object;
 
+extern "C" int printf(const char *, ...);
+
 /// Path of the current binary.
 static const char *LinkerExecutable;
 
@@ -85,6 +87,8 @@ static codegen::RegisterCodeGenFlags CodeGenFlags;
 static std::atomic<bool> LTOError;
 
 using OffloadingImage = OffloadBinary::OffloadingImage;
+
+Module *HostModule = nullptr;
 
 namespace llvm {
 // Provide DenseMapInfo so that OffloadKind can be used in a DenseMap.
@@ -774,6 +778,14 @@ Error linkBitcodeFiles(SmallVectorImpl<OffloadFile> &InputFiles,
                         ? createLTO(Args, Features, OutputBitcode)
                         : createLTO(Args, Features);
 
+  LLVMContext &Ctx = LTOBackend->getContext();
+  std::unique_ptr<Module> HostModulePtr =
+      std::make_unique<Module>("host-rpc.bc", Ctx);
+  HostModule = HostModulePtr.get();
+  HostModulePtr->setTargetTriple(
+      Args.getLastArgValue(OPT_host_triple_EQ, sys::getDefaultTargetTriple()));
+  printf("[linker-wrapper] HostModule=%p\n", HostModule);
+
   // We need to resolve the symbols so the LTO backend knows which symbols need
   // to be kept or can be internalized. This is a simplified symbol resolution
   // scheme to approximate the full resolution a linker would do.
@@ -862,6 +874,10 @@ Error linkBitcodeFiles(SmallVectorImpl<OffloadFile> &InputFiles,
 
   if (Error Err = LTOBackend->run(AddStream))
     return Err;
+
+  // Reset the HostModule pointer.
+  HostModulePtr.reset();
+  HostModule = nullptr;
 
   if (LTOError)
     return createStringError(inconvertibleErrorCode(),

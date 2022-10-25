@@ -100,6 +100,7 @@ set(include_files
 set(src_files
   ${source_directory}/Configuration.cpp
   ${source_directory}/Debug.cpp
+  ${source_directory}/HostRPC.cpp
   ${source_directory}/Kernel.cpp
   ${source_directory}/LibC.cpp
   ${source_directory}/Mapping.cpp
