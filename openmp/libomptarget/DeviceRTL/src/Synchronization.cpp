@@ -115,6 +115,8 @@ uint32_t atomicExchange(uint32_t *Address, uint32_t Val,
 }
 ///}
 
+int32_t atomicAddSys(int32_t *Address, uint32_t Val);
+
 // Forward declarations defined to be defined for AMDGCN and NVPTX.
 uint32_t atomicInc(uint32_t *A, uint32_t V, atomic::OrderingTy Ordering);
 void namedBarrierInit();
@@ -283,7 +285,7 @@ void setCriticalLock(omp_lock_t *Lock) {
   if (mapping::getThreadIdInWarp() == LowestActiveThread) {
     fenceKernel(atomic::release);
     while (!atomicCAS((uint32_t *)Lock, UNSET, SET, atomic::relaxed,
-                       atomic::relaxed)) {
+                      atomic::relaxed)) {
       __builtin_amdgcn_s_sleep(32);
     }
     fenceKernel(atomic::aquire);
@@ -302,6 +304,10 @@ void setCriticalLock(omp_lock_t *Lock) {
 uint32_t atomicInc(uint32_t *Address, uint32_t Val,
                    atomic::OrderingTy Ordering) {
   return __nvvm_atom_inc_gen_ui(Address, Val);
+}
+
+int32_t atomicAddSys(int32_t *Address, int32_t Val) {
+  return __nvvm_atom_sys_add_gen_i(Address, Val);
 }
 
 void namedBarrierInit() {}
@@ -471,12 +477,24 @@ uint32_t atomic::inc(uint32_t *Addr, uint32_t V, atomic::OrderingTy Ordering) {
   return impl::atomicInc(Addr, V, Ordering);
 }
 
-void unsetCriticalLock(omp_lock_t *Lock) {
-  impl::unsetLock(Lock);
+int32_t atomic::addSys(int32_t *Addr, int32_t Val) {
+  return impl::atomicAddSys(Addr, Val);
 }
 
-void setCriticalLock(omp_lock_t *Lock) {
-  impl::setLock(Lock);
+void unsetCriticalLock(omp_lock_t *Lock) { impl::unsetLock(Lock); }
+
+void setCriticalLock(omp_lock_t *Lock) { impl::setLock(Lock); }
+
+void mutex::TicketLock::lock() {
+  uint64_t MyTicket = atomic::add(&NextTicket, 1, atomic::seq_cst);
+  while (atomic::load(&NowServing, atomic::aquire) != MyTicket)
+    ;
+  fence::kernel(atomic::aquire);
+}
+
+void mutex::TicketLock::unlock() {
+  fence::kernel(atomic::release);
+  atomic::add(&NowServing, 1, atomic::seq_cst);
 }
 
 extern "C" {
