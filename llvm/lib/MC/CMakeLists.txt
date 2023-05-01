@@ -48,6 +48,7 @@ add_llvm_component_library(LLVMMC
   MCSectionXCOFF.cpp
   MCStreamer.cpp
   MCSPIRVStreamer.cpp
+  MCMetalLibStreamer.cpp
   MCSubtargetInfo.cpp
   MCSymbol.cpp
   MCSymbolELF.cpp

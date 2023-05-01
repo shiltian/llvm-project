@@ -84,6 +84,8 @@ StringRef Triple::getArchTypeName(ArchType Kind) {
   case x86_64:         return "x86_64";
   case xcore:          return "xcore";
   case xtensa:         return "xtensa";
+  case air:            return "air";
+  case air64:          return "air64";
   }
 
   llvm_unreachable("Invalid ArchType!");
@@ -308,6 +310,7 @@ StringRef Triple::getObjectFormatTypeName(ObjectFormatType Kind) {
   case XCOFF: return "xcoff";
   case DXContainer: return "dxcontainer";
   case SPIRV: return "spirv";
+  case MetalLib: return "metallib";
   }
   llvm_unreachable("unknown object format type");
 }
@@ -873,6 +876,9 @@ static Triple::ObjectFormatType getDefaultFormat(const Triple &T) {
 
   case Triple::dxil:
     return Triple::DXContainer;
+  case Triple::air:
+  case Triple::air64:
+    return Triple::MetalLib;
   }
   llvm_unreachable("unknown architecture");
 }
@@ -1431,6 +1437,7 @@ static unsigned getArchPointerBitWidth(llvm::Triple::ArchType Arch) {
   case llvm::Triple::x86:
   case llvm::Triple::xcore:
   case llvm::Triple::xtensa:
+  case llvm::Triple::air:
     return 32;
 
   case llvm::Triple::aarch64:
@@ -1456,6 +1463,7 @@ static unsigned getArchPointerBitWidth(llvm::Triple::ArchType Arch) {
   case llvm::Triple::ve:
   case llvm::Triple::wasm64:
   case llvm::Triple::x86_64:
+  case llvm::Triple::air64:
     return 64;
   }
   llvm_unreachable("Invalid architecture value");
@@ -1522,6 +1530,7 @@ Triple Triple::get32BitArchVariant() const {
   case Triple::x86:
   case Triple::xcore:
   case Triple::xtensa:
+  case Triple::air:
     // Already 32-bit.
     break;
 
@@ -1549,6 +1558,7 @@ Triple Triple::get32BitArchVariant() const {
     break;
   case Triple::wasm64:         T.setArch(Triple::wasm32);  break;
   case Triple::x86_64:         T.setArch(Triple::x86);     break;
+  case Triple::air64:          T.setArch(Triple::air);     break;
   }
   return T;
 }
@@ -1599,6 +1609,7 @@ Triple Triple::get64BitArchVariant() const {
   case Triple::ve:
   case Triple::wasm64:
   case Triple::x86_64:
+  case Triple::air64:
     // Already 64-bit.
     break;
 
@@ -1629,6 +1640,7 @@ Triple Triple::get64BitArchVariant() const {
   case Triple::thumbeb:         T.setArch(Triple::aarch64_be); break;
   case Triple::wasm32:          T.setArch(Triple::wasm64);     break;
   case Triple::x86:             T.setArch(Triple::x86_64);     break;
+  case Triple::air:             T.setArch(Triple::air64);      break;
   }
   return T;
 }

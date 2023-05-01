@@ -30,6 +30,7 @@
 #include "llvm/MC/MCSectionGOFF.h"
 #include "llvm/MC/MCSectionMachO.h"
 #include "llvm/MC/MCSectionSPIRV.h"
+#include "llvm/MC/MCSectionMetalLib.h"
 #include "llvm/MC/MCSectionWasm.h"
 #include "llvm/MC/MCSectionXCOFF.h"
 #include "llvm/MC/MCStreamer.h"
@@ -108,6 +109,9 @@ MCContext::MCContext(const Triple &TheTriple, const MCAsmInfo *mai,
     break;
   case Triple::SPIRV:
     Env = IsSPIRV;
+    break;
+  case Triple::MetalLib:
+    Env = IsMetalLib;
     break;
   case Triple::UnknownObjectFormat:
     report_fatal_error("Cannot initialize MC for unknown object file format.");
@@ -253,6 +257,7 @@ MCSymbol *MCContext::createSymbolImpl(const StringMapEntry<bool> *Name,
     return new (Name, *this) MCSymbolWasm(Name, IsTemporary);
   case MCContext::IsXCOFF:
     return createXCOFFSymbolImpl(Name, IsTemporary);
+  case MCContext::IsMetalLib:
   case MCContext::IsDXContainer:
     break;
   case MCContext::IsSPIRV:
@@ -841,6 +846,21 @@ MCSectionSPIRV *MCContext::getSPIRVSection() {
   MCSymbol *Begin = nullptr;
   MCSectionSPIRV *Result = new (SPIRVAllocator.Allocate())
       MCSectionSPIRV(SectionKind::getText(), Begin);
+
+  auto *F = new MCDataFragment();
+  Result->getFragmentList().insert(Result->begin(), F);
+  F->setParent(Result);
+
+  if (Begin)
+    Begin->setFragment(F);
+
+  return Result;
+}
+
+MCSectionMetalLib *MCContext::getMetalLibSection() {
+  MCSymbol *Begin = nullptr;
+  MCSectionMetalLib *Result = new (MetalLibAllocator.Allocate())
+      MCSectionMetalLib(SectionKind::getText(), Begin);
 
   auto *F = new MCDataFragment();
   Result->getFragmentList().insert(Result->begin(), F);

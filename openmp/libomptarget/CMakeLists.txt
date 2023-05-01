@@ -105,9 +105,13 @@ set(LIBOMPTARGET_LLVM_LIBRARY_DIR "${LLVM_LIBRARY_DIR}" CACHE STRING
   "Path to folder containing llvm library libomptarget.so")
 
 # Build offloading plugins and device RTLs if they are available.
-add_subdirectory(plugins)
-add_subdirectory(plugins-nextgen)
-add_subdirectory(DeviceRTL)
+# FIXME: For now let's disable building other stuff on macOS.
+if (NOT APPLE)
+  add_subdirectory(plugins)
+  add_subdirectory(plugins-nextgen)
+  add_subdirectory(DeviceRTL)
+endif()
+
 add_subdirectory(tools)
 
 # Add tests.

@@ -54,6 +54,7 @@ class MCSectionELF;
 class MCSectionGOFF;
 class MCSectionMachO;
 class MCSectionSPIRV;
+class MCSectionMetalLib;
 class MCSectionWasm;
 class MCSectionXCOFF;
 class MCStreamer;
@@ -87,7 +88,8 @@ public:
     IsSPIRV,
     IsWasm,
     IsXCOFF,
-    IsDXContainer
+    IsDXContainer,
+    IsMetalLib
   };
 
 private:
@@ -135,6 +137,7 @@ private:
   SpecificBumpPtrAllocator<MCSectionMachO> MachOAllocator;
   SpecificBumpPtrAllocator<MCSectionGOFF> GOFFAllocator;
   SpecificBumpPtrAllocator<MCSectionSPIRV> SPIRVAllocator;
+  SpecificBumpPtrAllocator<MCSectionSPIRV> MetalLibAllocator;
   SpecificBumpPtrAllocator<MCSectionWasm> WasmAllocator;
   SpecificBumpPtrAllocator<MCSectionXCOFF> XCOFFAllocator;
   SpecificBumpPtrAllocator<MCInst> MCInstAllocator;
@@ -640,6 +643,8 @@ public:
                             unsigned UniqueID = GenericSectionID);
 
   MCSectionSPIRV *getSPIRVSection();
+
+  MCSectionMetalLib *getMetalLibSection();
 
   MCSectionWasm *getWasmSection(const Twine &Section, SectionKind K,
                                 unsigned Flags = 0) {

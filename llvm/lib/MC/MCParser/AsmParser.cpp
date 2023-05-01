@@ -800,6 +800,10 @@ AsmParser::AsmParser(SourceMgr &SM, MCContext &Ctx, MCStreamer &Out,
     report_fatal_error(
         "Need to implement createSPIRVAsmParser for SPIRV format.");
     break;
+  case MCContext::IsMetalLib:
+    report_fatal_error(
+        "Need to implement createMetalLibAsmParser for SPIRV format.");
+    break;
   case MCContext::IsWasm:
     PlatformParser.reset(createWasmAsmParser());
     break;

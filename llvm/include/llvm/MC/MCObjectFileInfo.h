@@ -459,6 +459,7 @@ private:
   void initGOFFMCObjectFileInfo(const Triple &T);
   void initCOFFMCObjectFileInfo(const Triple &T);
   void initSPIRVMCObjectFileInfo(const Triple &T);
+  void initMetalLibMCObjectFileInfo(const Triple &T);
   void initWasmMCObjectFileInfo(const Triple &T);
   void initXCOFFMCObjectFileInfo(const Triple &T);
   void initDXContainerObjectFileInfo(const Triple &T);

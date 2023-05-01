@@ -120,6 +120,11 @@ MCStreamer *createDXContainerStreamer(MCContext &Ctx,
                                       std::unique_ptr<MCObjectWriter> &&OW,
                                       std::unique_ptr<MCCodeEmitter> &&CE,
                                       bool RelaxAll);
+MCStreamer *createMetalLibStreamer(MCContext &Ctx,
+                                   std::unique_ptr<MCAsmBackend> &&TAB,
+                                   std::unique_ptr<MCObjectWriter> &&OW,
+                                   std::unique_ptr<MCCodeEmitter> &&CE,
+                                   bool RelaxAll);
 
 MCRelocationInfo *createMCRelocationInfo(const Triple &TT, MCContext &Ctx);
 
@@ -220,8 +225,14 @@ public:
                       std::unique_ptr<MCAsmBackend> &&TAB,
                       std::unique_ptr<MCObjectWriter> &&OW,
                       std::unique_ptr<MCCodeEmitter> &&Emitter, bool RelaxAll);
-  
+
   using DXContainerStreamerCtorTy =
+      MCStreamer *(*)(const Triple &T, MCContext &Ctx,
+                      std::unique_ptr<MCAsmBackend> &&TAB,
+                      std::unique_ptr<MCObjectWriter> &&OW,
+                      std::unique_ptr<MCCodeEmitter> &&Emitter, bool RelaxAll);
+
+  using MetalLibStreamerCtorTy =
       MCStreamer *(*)(const Triple &T, MCContext &Ctx,
                       std::unique_ptr<MCAsmBackend> &&TAB,
                       std::unique_ptr<MCObjectWriter> &&OW,
@@ -333,6 +344,7 @@ private:
   XCOFFStreamerCtorTy XCOFFStreamerCtorFn = nullptr;
   SPIRVStreamerCtorTy SPIRVStreamerCtorFn = nullptr;
   DXContainerStreamerCtorTy DXContainerStreamerCtorFn = nullptr;
+  MetalLibStreamerCtorTy MetalLibStreamerCtorFn = nullptr;
 
   /// Construction function for this target's null TargetStreamer, if
   /// registered (default = nullptr).
@@ -621,6 +633,13 @@ public:
         S = createDXContainerStreamer(Ctx, std::move(TAB), std::move(OW),
                                       std::move(Emitter), RelaxAll);
       break;
+    case Triple::MetalLib:
+      if (MetalLibStreamerCtorFn)
+        S = MetalLibStreamerCtorFn(T, Ctx, std::move(TAB), std::move(OW),
+                                   std::move(Emitter), RelaxAll);
+      else
+        S = createMetalLibStreamer(Ctx, std::move(TAB), std::move(OW),
+                                   std::move(Emitter), RelaxAll);
     }
     if (ObjectTargetStreamerCtorFn)
       ObjectTargetStreamerCtorFn(*S, STI);

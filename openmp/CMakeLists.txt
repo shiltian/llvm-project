@@ -71,11 +71,11 @@ set(OPENMP_TEST_OPENMP_FLAGS ${OPENMP_TEST_COMPILER_OPENMP_FLAGS} CACHE STRING
   "OpenMP compiler flag to use for testing OpenMP runtime libraries.")
 
 set(ENABLE_LIBOMPTARGET ON)
-# Currently libomptarget cannot be compiled on Windows or MacOS X.
-# Since the device plugins are only supported on Linux anyway,
-# there is no point in trying to compile libomptarget on other OSes.
+# Currently libomptarget cannot be compiled on Windows.
+# Since the device plugins are only supported on Linux anyway, there is no point
+# in trying to compile libomptarget on other OSes.
 # 32-bit systems are not supported either.
-if (APPLE OR WIN32 OR NOT OPENMP_HAVE_STD_CPP17_FLAG OR NOT CMAKE_SIZEOF_VOID_P EQUAL 8)
+if (WIN32 OR NOT OPENMP_HAVE_STD_CPP17_FLAG OR NOT CMAKE_SIZEOF_VOID_P EQUAL 8)
   set(ENABLE_LIBOMPTARGET OFF)
 endif()
 
@@ -97,8 +97,8 @@ add_subdirectory(runtime)
 
 if (OPENMP_ENABLE_LIBOMPTARGET)
   # Check that the library can actually be built.
-  if (APPLE OR WIN32)
-    message(FATAL_ERROR "libomptarget cannot be built on Windows and MacOS X!")
+  if (WIN32)
+    message(FATAL_ERROR "libomptarget cannot be built on Windows!")
   elseif (NOT OPENMP_HAVE_STD_CPP17_FLAG)
     message(FATAL_ERROR "Host compiler must support C++17 to build libomptarget!")
   elseif (NOT CMAKE_SIZEOF_VOID_P EQUAL 8)

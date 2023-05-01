@@ -5077,6 +5077,7 @@ std::string CGObjCCommonMac::GetSectionName(StringRef Section,
   case llvm::Triple::Wasm:
   case llvm::Triple::GOFF:
   case llvm::Triple::SPIRV:
+  case llvm::Triple::MetalLib:
   case llvm::Triple::XCOFF:
   case llvm::Triple::DXContainer:
     llvm::report_fatal_error(
