@@ -11,6 +11,7 @@ add_llvm_component_library(LLVMTransformUtils
   CallGraphUpdater.cpp
   CanonicalizeAliases.cpp
   CanonicalizeFreezeInLoops.cpp
+  CanonicalizeMainFunction.cpp
   CloneFunction.cpp
   CloneModule.cpp
   CodeExtractor.cpp

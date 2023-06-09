@@ -47,6 +47,7 @@ MODULE_PASS("openmp-opt", OpenMPOptPass())
 MODULE_PASS("openmp-opt-postlink", OpenMPOptPass(ThinOrFullLTOPhase::FullLTOPostLink))
 MODULE_PASS("called-value-propagation", CalledValuePropagationPass())
 MODULE_PASS("canonicalize-aliases", CanonicalizeAliasesPass())
+MODULE_PASS("canonicalize-main-function", CanonicalizeMainFunctionPass())
 MODULE_PASS("cg-profile", CGProfilePass())
 MODULE_PASS("check-debugify", NewPMCheckDebugifyPass())
 MODULE_PASS("constmerge", ConstantMergePass())
@@ -128,6 +129,7 @@ MODULE_PASS("sanmd-module", SanitizerBinaryMetadataPass())
 MODULE_PASS("memprof-module", ModuleMemProfilerPass())
 MODULE_PASS("poison-checking", PoisonCheckingPass())
 MODULE_PASS("pseudo-probe-update", PseudoProbeUpdatePass())
+MODULE_PASS("host-rpc", HostRPCPass())
 #undef MODULE_PASS
 
 #ifndef MODULE_PASS_WITH_PARAMS
