@@ -87,6 +87,7 @@ set(include_files
   ${include_directory}/Interface.h
   ${include_directory}/LibC.h
   ${include_directory}/Mapping.h
+  ${include_directory}/Memory.h
   ${include_directory}/State.h
   ${include_directory}/Synchronization.h
   ${include_directory}/Types.h
@@ -96,6 +97,7 @@ set(include_files
 set(src_files
   ${source_directory}/Configuration.cpp
   ${source_directory}/Debug.cpp
+  ${source_directory}/HostRPC.cpp
   ${source_directory}/Kernel.cpp
   ${source_directory}/LibC.cpp
   ${source_directory}/Mapping.cpp
@@ -108,6 +110,14 @@ set(src_files
   ${source_directory}/Utils.cpp
   ${source_directory}/Workshare.cpp
 )
+
+if (LIBOMPTARGET_DEVICE_BUILTIN_ALLOCATOR)
+  list(APPEND src_files ${source_directory}/BuiltinAllocator.cpp)
+elseif (LIBOMPTARGET_GENERIC_ALLOCATOR)
+  list(APPEND src_files ${source_directory}/GenericAllocator.cpp)
+else()
+  list(APPEND src_files ${source_directory}/TeamAllocator.cpp)
+endif()
 
 set(clang_opt_flags -O3 -mllvm -openmp-opt-disable -DSHARED_SCRATCHPAD_SIZE=512)
 set(link_opt_flags  -O3        -openmp-opt-disable -attributor-enable=module)
@@ -123,10 +133,19 @@ set(bc_flags -c -foffload-lto -std=c++17 -fvisibility=hidden
              -nocudalib -nogpulib -nostdinc
              -fopenmp -fopenmp-cuda-mode
              -Wno-unknown-cuda-version
+             -DOMPTARGET_DEVICE_RUNTIME
              -I${include_directory}
              -I${devicertl_base_directory}/../include
              ${LIBOMPTARGET_LLVM_INCLUDE_DIRS_DEVICERTL}
 )
+
+if (LIBOMPTARGET_DEVICERTL_HOSTRPC_DEBUG)
+  list(APPEND bc_flags "-DHOSTRPC_DEBUG")
+endif()
+
+if (LIBOMPTARGET_DEVICERTL_HOSTRPC_PROFILING)
+  list(APPEND bc_flags "-DHOSTRPC_PROFILING")
+endif()
 
 # first create an object target
 add_library(omptarget.devicertl.all_objs OBJECT IMPORTED)

@@ -1594,6 +1594,8 @@ ChangeStatus AAPointerInfoFloating::updateImpl(Attributor &A) {
     // might change while we iterate through a loop. For now, we give up if
     // the PHI is not invariant.
     if (isa<PHINode>(Usr)) {
+      if (!Usr->getType()->isPointerTy())
+        return false;
       // Note the order here, the Usr access might change the map, CurPtr is
       // already in it though.
       bool IsFirstPHIUser = !OffsetInfoMap.count(Usr);
@@ -1816,6 +1818,31 @@ ChangeStatus AAPointerInfoFloating::updateImpl(Attributor &A) {
       return false;
     }
 
+    if (auto *II = dyn_cast<ICmpInst>(Usr)) {
+      auto CheckIfUsedAsPred = [&](const Use &U, bool &Follow) {
+        const auto *UU = U.getUser();
+        if (isa<SelectInst>(UU))
+          return true;
+        if (isa<BranchInst>(UU))
+          return true;
+
+        LLVM_DEBUG(dbgs() << "[AAPointerInfo] ICmpInst user not handled " << *UU
+                          << "\n");
+        return false;
+      };
+      if (!A.checkForAllUses(CheckIfUsedAsPred, *this, *II,
+                             /* CheckBBLivenessOnly */ true,
+                             DepClassTy::OPTIONAL,
+                             /* IgnoreDroppableUses */ true)) {
+        LLVM_DEBUG(
+            dbgs() << "[AAPointerInfo] Check for all uses failed for ICmpInst "
+                   << *II << "\n");
+        return false;
+      }
+
+      return true;
+    }
+
     LLVM_DEBUG(dbgs() << "[AAPointerInfo] User not handled " << *Usr << "\n");
     return false;
   };
@@ -1934,7 +1961,6 @@ struct AAPointerInfoCallSiteArgument final : AAPointerInfoFloating {
 
     const auto &NoCaptureAA =
         A.getAAFor<AANoCapture>(*this, getIRPosition(), DepClassTy::OPTIONAL);
-
     if (!NoCaptureAA.isAssumedNoCapture())
       return indicatePessimisticFixpoint();
 
@@ -11831,9 +11857,34 @@ struct AAUnderlyingObjectsImpl
   /// See AbstractAttribute::trackStatistics()
   void trackStatistics() const override {}
 
+  // TODO: This is a temporary solution for terminals.
+  bool checkIfTerminals(Attributor &A, Value *V) {
+    auto *CI = dyn_cast<CallInst>(V);
+    if (!CI)
+      return false;
+
+    Function *Scope = CI->getFunction();
+    const auto *TLI = A.getInfoCache().getTargetLibraryInfoForFunction(*Scope);
+    LibFunc TLIFn;
+    if (TLI && TLI->getLibFunc(*CI, TLIFn)) {
+      if (TLIFn == LibFunc::LibFunc_malloc ||
+          TLIFn == LibFunc::LibFunc___kmpc_alloc_shared)
+        return true;
+    }
+
+    return false;
+  }
+
   /// See AbstractAttribute::updateImpl(...).
   ChangeStatus updateImpl(Attributor &A) override {
     auto &Ptr = getAssociatedValue();
+
+    if (checkIfTerminals(A, &Ptr)) {
+      bool Changed = false;
+      Changed |= InterAssumedUnderlyingObjects.insert(&Ptr);
+      Changed |= IntraAssumedUnderlyingObjects.insert(&Ptr);
+      return Changed ? ChangeStatus::CHANGED : ChangeStatus::UNCHANGED;
+    }
 
     auto DoUpdate = [&](SmallSetVector<Value *, 8> &UnderlyingObjects,
                         AA::ValueScope Scope) {
@@ -11850,6 +11901,10 @@ struct AAUnderlyingObjectsImpl
       for (unsigned I = 0; I < Values.size(); ++I) {
         auto &VAC = Values[I];
         auto *Obj = VAC.getValue();
+        if (checkIfTerminals(A, Obj)) {
+          Changed |= UnderlyingObjects.insert(Obj);
+          continue;
+        }
         Value *UO = getUnderlyingObject(Obj);
         if (UO && UO != VAC.getValue() && SeenObjects.insert(UO).second) {
           const auto &OtherAA = A.getAAFor<AAUnderlyingObjects>(
@@ -11880,6 +11935,16 @@ struct AAUnderlyingObjectsImpl
           continue;
         }
 
+        if (auto *LI = dyn_cast<LoadInst>(Obj)) {
+          LLVM_DEBUG({
+            dbgs() << "[AAUnderlyingObjects] for CtxI ";
+            getCtxI()->print(dbgs());
+            dbgs() << " at position " << getIRPosition() << " has LoadInst ";
+            LI->print(dbgs());
+            dbgs() << '\n';
+          });
+        }
+
         Changed |= UnderlyingObjects.insert(Obj);
       }
 
@@ -11889,6 +11954,8 @@ struct AAUnderlyingObjectsImpl
     bool Changed = false;
     Changed |= DoUpdate(IntraAssumedUnderlyingObjects, AA::Intraprocedural);
     Changed |= DoUpdate(InterAssumedUnderlyingObjects, AA::Interprocedural);
+
+    LLVM_DEBUG(dumpState(dbgs()));
 
     return Changed ? ChangeStatus::CHANGED : ChangeStatus::UNCHANGED;
   }
@@ -11926,6 +11993,19 @@ private:
       llvm_unreachable(
           "The forall call should not return false at this position");
     return Changed;
+  }
+
+  void dumpState(raw_ostream &O) {
+    O << "Underlying objects:\nintra procedureal:\n";
+    for (auto *Obj : IntraAssumedUnderlyingObjects) {
+      Obj->print(O);
+      O << '\n';
+    }
+    O << "inter procedureal:\n";
+    for (auto *Obj : InterAssumedUnderlyingObjects) {
+      Obj->print(O);
+      O << '\n';
+    }
   }
 
   /// All the underlying objects collected so far via intra procedural scope.
