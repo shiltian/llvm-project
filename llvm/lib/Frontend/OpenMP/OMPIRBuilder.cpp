@@ -494,13 +494,21 @@ void OpenMPIRBuilder::getKernelArgsVector(TargetKernelArgs &KernelArgs,
   Value *Version = Builder.getInt32(OMP_KERNEL_ARG_VERSION);
   Value *PointerNum = Builder.getInt32(KernelArgs.NumTargetItems);
   auto Int32Ty = Type::getInt32Ty(Builder.getContext());
-  Value *ZeroArray = Constant::getNullValue(ArrayType::get(Int32Ty, 3));
+  constexpr const size_t MaxDim = 3;
+  Value *ZeroArray = Constant::getNullValue(ArrayType::get(Int32Ty, MaxDim));
   Value *Flags = Builder.getInt64(KernelArgs.HasNoWait);
 
+  assert(!KernelArgs.NumTeams.empty());
+  assert(!KernelArgs.NumThreads.empty());
+
   Value *NumTeams3D =
-      Builder.CreateInsertValue(ZeroArray, KernelArgs.NumTeams, {0});
+      Builder.CreateInsertValue(ZeroArray, KernelArgs.NumTeams[0], {0});
+  for (unsigned I = 1; I < std::min(KernelArgs.NumTeams.size(), MaxDim); ++I)
+    Builder.CreateInsertValue(NumTeams3D, KernelArgs.NumTeams[I], {I});
   Value *NumThreads3D =
-      Builder.CreateInsertValue(ZeroArray, KernelArgs.NumThreads, {0});
+      Builder.CreateInsertValue(ZeroArray, KernelArgs.NumThreads[0], {0});
+  for (unsigned I = 1; I < std::min(KernelArgs.NumThreads.size(), MaxDim); ++I)
+    Builder.CreateInsertValue(NumThreads3D, KernelArgs.NumThreads[I], {I});
 
   ArgsVector = {Version,
                 PointerNum,
@@ -1105,7 +1113,7 @@ OpenMPIRBuilder::InsertPointTy OpenMPIRBuilder::emitKernelLaunch(
   // of teams and threads so no additional calls to the runtime are required.
   // Check the error code and execute the host version if required.
   Builder.restoreIP(emitTargetKernel(Builder, AllocaIP, Return, RTLoc, DeviceID,
-                                     Args.NumTeams, Args.NumThreads,
+                                     Args.NumTeams[0], Args.NumThreads[0],
                                      OutlinedFnID, ArgsVector));
 
   BasicBlock *OffloadFailedBlock =
@@ -5208,7 +5216,8 @@ static void emitTargetOutlinedFunction(
 static void emitTargetCall(OpenMPIRBuilder &OMPBuilder, IRBuilderBase &Builder,
                            OpenMPIRBuilder::InsertPointTy AllocaIP,
                            Function *OutlinedFn, Constant *OutlinedFnID,
-                           int32_t NumTeams, int32_t NumThreads,
+                           ArrayRef<int32_t> NumTeams,
+                           ArrayRef<int32_t> NumThreads,
                            SmallVectorImpl<Value *> &Args,
                            OpenMPIRBuilder::GenMapInfoCallbackTy GenMapInfoCB) {
 
@@ -5235,8 +5244,12 @@ static void emitTargetCall(OpenMPIRBuilder &OMPBuilder, IRBuilderBase &Builder,
   unsigned NumTargetItems = MapInfo.BasePointers.size();
   // TODO: Use correct device ID
   Value *DeviceID = Builder.getInt64(OMP_DEVICEID_UNDEF);
-  Value *NumTeamsVal = Builder.getInt32(NumTeams);
-  Value *NumThreadsVal = Builder.getInt32(NumThreads);
+  SmallVector<Value *, 3> NumTeamsC;
+  for (auto V : NumTeams)
+    NumTeamsC.push_back(llvm::ConstantInt::get(Builder.getInt32Ty(), V));
+  SmallVector<Value *, 3> NumThreadsC;
+  for (auto V : NumThreads)
+    NumThreadsC.push_back(llvm::ConstantInt::get(Builder.getInt32Ty(), V));
   uint32_t SrcLocStrSize;
   Constant *SrcLocStr = OMPBuilder.getOrCreateDefaultSrcLocStr(SrcLocStrSize);
   Value *RTLoc = OMPBuilder.getOrCreateIdent(SrcLocStr, SrcLocStrSize,
@@ -5249,8 +5262,8 @@ static void emitTargetCall(OpenMPIRBuilder &OMPBuilder, IRBuilderBase &Builder,
   bool HasNoWait = false;
 
   OpenMPIRBuilder::TargetKernelArgs KArgs(NumTargetItems, RTArgs, NumIterations,
-                                          NumTeamsVal, NumThreadsVal,
-                                          DynCGGroupMem, HasNoWait);
+                                          NumTeamsC, NumThreadsC, DynCGGroupMem,
+                                          HasNoWait);
 
   Builder.restoreIP(OMPBuilder.emitKernelLaunch(
       Builder, OutlinedFn, OutlinedFnID, EmitTargetCallFallbackCB, KArgs,
@@ -5259,9 +5272,9 @@ static void emitTargetCall(OpenMPIRBuilder &OMPBuilder, IRBuilderBase &Builder,
 
 OpenMPIRBuilder::InsertPointTy OpenMPIRBuilder::createTarget(
     const LocationDescription &Loc, InsertPointTy AllocaIP,
-    InsertPointTy CodeGenIP, TargetRegionEntryInfo &EntryInfo, int32_t NumTeams,
-    int32_t NumThreads, SmallVectorImpl<Value *> &Args,
-    GenMapInfoCallbackTy GenMapInfoCB,
+    InsertPointTy CodeGenIP, TargetRegionEntryInfo &EntryInfo,
+    ArrayRef<int32_t> NumTeams, ArrayRef<int32_t> NumThreads,
+    SmallVectorImpl<Value *> &Args, GenMapInfoCallbackTy GenMapInfoCB,
     OpenMPIRBuilder::TargetBodyGenCallbackTy CBFunc,
     OpenMPIRBuilder::TargetGenArgAccessorsCallbackTy ArgAccessorFuncCB) {
   if (!updateToLocation(Loc))

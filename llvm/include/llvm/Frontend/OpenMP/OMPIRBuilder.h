@@ -1413,6 +1413,7 @@ public:
   /// \param NumTeams Numer of teams for the region via the 'num_teams' clause
   ///                 or 0 if unspecified and -1 if there is no 'teams' clause.
   /// \param NumThreads Number of threads via the 'thread_limit' clause.
+  /// \param NumThreadDim The dimension of NumThreads above.
   /// \param HostPtr Pointer to the host-side pointer of the target kernel.
   /// \param KernelArgs Array of arguments to the kernel.
   InsertPointTy emitTargetKernel(const LocationDescription &Loc,
@@ -1626,9 +1627,9 @@ public:
     /// The number of iterations
     Value *NumIterations;
     /// The number of teams.
-    Value *NumTeams;
+    SmallVector<Value *, 3> NumTeams;
     /// The number of threads.
-    Value *NumThreads;
+    SmallVector<Value *, 3> NumThreads;
     /// The size of the dynamic shared memory.
     Value *DynCGGroupMem;
     /// True if the kernel has 'no wait' clause.
@@ -1636,8 +1637,9 @@ public:
 
     /// Constructor for TargetKernelArgs
     TargetKernelArgs(unsigned NumTargetItems, TargetDataRTArgs RTArgs,
-                     Value *NumIterations, Value *NumTeams, Value *NumThreads,
-                     Value *DynCGGroupMem, bool HasNoWait)
+                     Value *NumIterations, ArrayRef<Value *> NumTeams,
+                     ArrayRef<Value *> NumThreads, Value *DynCGGroupMem,
+                     bool HasNoWait)
         : NumTargetItems(NumTargetItems), RTArgs(RTArgs),
           NumIterations(NumIterations), NumTeams(NumTeams),
           NumThreads(NumThreads), DynCGGroupMem(DynCGGroupMem),
@@ -2245,15 +2247,13 @@ public:
   /// \param BodyGenCB Callback that will generate the region code.
   /// \param ArgAccessorFuncCB Callback that will generate accessors
   /// instructions for passed in target arguments where neccessary
-  InsertPointTy createTarget(const LocationDescription &Loc,
-                             OpenMPIRBuilder::InsertPointTy AllocaIP,
-                             OpenMPIRBuilder::InsertPointTy CodeGenIP,
-                             TargetRegionEntryInfo &EntryInfo, int32_t NumTeams,
-                             int32_t NumThreads,
-                             SmallVectorImpl<Value *> &Inputs,
-                             GenMapInfoCallbackTy GenMapInfoCB,
-                             TargetBodyGenCallbackTy BodyGenCB,
-                             TargetGenArgAccessorsCallbackTy ArgAccessorFuncCB);
+  InsertPointTy createTarget(
+      const LocationDescription &Loc, OpenMPIRBuilder::InsertPointTy AllocaIP,
+      OpenMPIRBuilder::InsertPointTy CodeGenIP,
+      TargetRegionEntryInfo &EntryInfo, ArrayRef<int32_t> NumTeams,
+      ArrayRef<int32_t> NumThreads, SmallVectorImpl<Value *> &Inputs,
+      GenMapInfoCallbackTy GenMapInfoCB, TargetBodyGenCallbackTy BodyGenCB,
+      TargetGenArgAccessorsCallbackTy ArgAccessorFuncCB);
 
   /// Returns __kmpc_for_static_init_* runtime function for the specified
   /// size \a IVSize and sign \a IVSigned. Will create a distribute call

@@ -6492,6 +6492,34 @@ llvm::Value *CGOpenMPRuntime::emitNumThreadsForTargetDirective(
   return NumThreadsVal;
 }
 
+void CGOpenMPRuntime::emitNumTeamsForBareTargetDirective(
+    CodeGenFunction &CGF, const OMPExecutableDirective &D,
+    llvm::SmallVectorImpl<llvm::Value *> &NumTeams) {
+  const auto *C = D.getSingleClause<OMPNumTeamsClause>();
+  if (!C->varlist_size())
+    return;
+  CodeGenFunction::RunCleanupsScope NumTeamsScope(CGF);
+  for (auto *E : C->varlists()) {
+    llvm::Value *V = CGF.EmitScalarExpr(E);
+    NumTeams.push_back(
+        CGF.Builder.CreateIntCast(V, CGF.Int32Ty, /*isSigned=*/true));
+  }
+}
+
+void CGOpenMPRuntime::emitThreadLimitForBareTargetDirective(
+    CodeGenFunction &CGF, const OMPExecutableDirective &D,
+    llvm::SmallVectorImpl<llvm::Value *> &ThreadLimit) {
+  const auto *C = D.getSingleClause<OMPThreadLimitClause>();
+  if (!C->varlist_size())
+    return;
+  CodeGenFunction::RunCleanupsScope ThreadLimitScope(CGF);
+  for (auto *E : C->varlists()) {
+    llvm::Value *V = CGF.EmitScalarExpr(E);
+    ThreadLimit.push_back(
+        CGF.Builder.CreateIntCast(V, CGF.Int32Ty, /*isSigned=*/true));
+  }
+}
+
 namespace {
 LLVM_ENABLE_BITMASK_ENUMS_IN_NAMESPACE();
 
@@ -9573,10 +9601,18 @@ static void emitTargetCallKernelLaunch(
       return CGF.Builder.saveIP();
     };
 
+    bool IsBare = D.hasClausesOfKind<OMPXBareClause>();
+
     llvm::Value *DeviceID = emitDeviceID(Device, CGF);
-    llvm::Value *NumTeams = OMPRuntime->emitNumTeamsForTargetDirective(CGF, D);
-    llvm::Value *NumThreads =
-        OMPRuntime->emitNumThreadsForTargetDirective(CGF, D);
+    SmallVector<llvm::Value *, 3> NumTeams;
+    SmallVector<llvm::Value *, 3> NumThreads;
+    if (IsBare) {
+      OMPRuntime->emitNumTeamsForBareTargetDirective(CGF, D, NumTeams);
+      OMPRuntime->emitThreadLimitForBareTargetDirective(CGF, D, NumThreads);
+    } else {
+      NumTeams.push_back(OMPRuntime->emitNumTeamsForTargetDirective(CGF, D));
+      NumThreads.push_back(OMPRuntime->emitNumThreadsForTargetDirective(CGF, D));
+    }
     llvm::Value *RTLoc = OMPRuntime->emitUpdateLocation(CGF, D.getBeginLoc());
     llvm::Value *NumIterations =
         OMPRuntime->emitTargetNumIterationsCall(CGF, D, SizeEmitter);
@@ -9589,7 +9625,7 @@ static void emitTargetCallKernelLaunch(
         nullptr /* MapTypesArrayEnd */, MappersArray, MapNamesArray);
 
     llvm::OpenMPIRBuilder::TargetKernelArgs Args(
-        NumTargetItems, RTArgs, NumIterations, NumTeams, NumThreads,
+        NumTargetItems, RTArgs, NumIterations, {NumTeams}, {NumThreads},
         DynCGGroupMem, HasNoWait);
 
     CGF.Builder.restoreIP(OMPRuntime->getOMPBuilder().emitKernelLaunch(

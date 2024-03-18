@@ -1037,6 +1037,46 @@ OMPFlushClause *OMPFlushClause::CreateEmpty(const ASTContext &C, unsigned N) {
   return new (Mem) OMPFlushClause(N);
 }
 
+OMPNumTeamsClause *
+OMPNumTeamsClause::Create(const ASTContext &C, SourceLocation StartLoc,
+                          SourceLocation LParenLoc, SourceLocation EndLoc,
+                          ArrayRef<Expr *> VL, Stmt *PreInit) {
+  auto *Clause = OMPNumTeamsClause::CreateEmpty(C, VL.size());
+  Clause->setLocStart(StartLoc);
+  Clause->setLParenLoc(LParenLoc);
+  Clause->setLocEnd(EndLoc);
+  Clause->setVarRefs(VL);
+  Clause->setPreInitStmt(PreInit);
+  return Clause;
+}
+
+OMPNumTeamsClause *OMPNumTeamsClause::CreateEmpty(const ASTContext &C,
+                                                  unsigned N) {
+  assert(N > 0 && "the clause has no expression");
+  void *Mem = C.Allocate(totalSizeToAlloc<Expr *>(N));
+  return new (Mem) OMPNumTeamsClause(N);
+}
+
+OMPThreadLimitClause *
+OMPThreadLimitClause::Create(const ASTContext &C, SourceLocation StartLoc,
+                             SourceLocation LParenLoc, SourceLocation EndLoc,
+                             ArrayRef<Expr *> VL, Stmt *PreInit) {
+  auto *Clause = OMPThreadLimitClause::CreateEmpty(C, VL.size());
+  Clause->setLocStart(StartLoc);
+  Clause->setLParenLoc(LParenLoc);
+  Clause->setLocEnd(EndLoc);
+  Clause->setVarRefs(VL);
+  Clause->setPreInitStmt(PreInit);
+  return Clause;
+}
+
+OMPThreadLimitClause *OMPThreadLimitClause::CreateEmpty(const ASTContext &C,
+                                                        unsigned N) {
+  assert(N > 0 && "the clause has no expression");
+  void *Mem = C.Allocate(totalSizeToAlloc<Expr *>(N));
+  return new (Mem) OMPThreadLimitClause(N);
+}
+
 OMPDepobjClause *OMPDepobjClause::Create(const ASTContext &C,
                                          SourceLocation StartLoc,
                                          SourceLocation LParenLoc,
@@ -1977,15 +2017,19 @@ void OMPClausePrinter::VisitOMPDeviceClause(OMPDeviceClause *Node) {
 }
 
 void OMPClausePrinter::VisitOMPNumTeamsClause(OMPNumTeamsClause *Node) {
-  OS << "num_teams(";
-  Node->getNumTeams()->printPretty(OS, nullptr, Policy, 0);
-  OS << ")";
+  if (!Node->varlist_empty()) {
+    OS << "num_teams";
+    VisitOMPClauseList(Node, '(');
+    OS << ")";
+  }
 }
 
 void OMPClausePrinter::VisitOMPThreadLimitClause(OMPThreadLimitClause *Node) {
-  OS << "thread_limit(";
-  Node->getThreadLimit()->printPretty(OS, nullptr, Policy, 0);
-  OS << ")";
+  if (!Node->varlist_empty()) {
+    OS << "thread_limit";
+    VisitOMPClauseList(Node, '(');
+    OS << ")";
+  }
 }
 
 void OMPClausePrinter::VisitOMPPriorityClause(OMPPriorityClause *Node) {

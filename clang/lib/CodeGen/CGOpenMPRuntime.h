@@ -649,6 +649,9 @@ public:
                                                 int32_t &MaxTeamsVal);
   llvm::Value *emitNumTeamsForTargetDirective(CodeGenFunction &CGF,
                                               const OMPExecutableDirective &D);
+  void emitNumTeamsForBareTargetDirective(
+      CodeGenFunction &CGF, const OMPExecutableDirective &D,
+      llvm::SmallVectorImpl<llvm::Value *> &NumTeams);
 
   /// Check for a number of threads upper bound constant value (stored in \p
   /// UpperBound), or expression (returned). If the value is conditional (via an
@@ -665,6 +668,10 @@ public:
   llvm::Value *
   emitNumThreadsForTargetDirective(CodeGenFunction &CGF,
                                    const OMPExecutableDirective &D);
+
+  void emitThreadLimitForBareTargetDirective(
+      CodeGenFunction &CGF, const OMPExecutableDirective &D,
+      llvm::SmallVectorImpl<llvm::Value *> &ThreadLimit);
 
   /// Return the trip count of loops associated with constructs / 'target teams
   /// distribute' and 'teams distribute parallel for'. \param SizeEmitter Emits
