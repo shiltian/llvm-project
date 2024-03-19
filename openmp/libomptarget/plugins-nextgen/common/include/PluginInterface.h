@@ -262,9 +262,9 @@ struct GenericKernelTy {
   Error launch(GenericDeviceTy &GenericDevice, void **ArgPtrs,
                ptrdiff_t *ArgOffsets, KernelArgsTy &KernelArgs,
                AsyncInfoWrapperTy &AsyncInfoWrapper) const;
-  virtual Error launchImpl(GenericDeviceTy &GenericDevice, uint32_t NumThreads,
-                           uint64_t NumBlocks, KernelArgsTy &KernelArgs,
-                           void *Args,
+  virtual Error launchImpl(GenericDeviceTy &GenericDevice,
+                           uint32_t NumThreads[3], uint32_t NumBlocks[3],
+                           KernelArgsTy &KernelArgs, void *Args,
                            AsyncInfoWrapperTy &AsyncInfoWrapper) const = 0;
 
   /// Get the kernel name.
@@ -319,8 +319,8 @@ protected:
 
   /// Prints generic kernel launch information.
   Error printLaunchInfo(GenericDeviceTy &GenericDevice,
-                        KernelArgsTy &KernelArgs, uint32_t NumThreads,
-                        uint64_t NumBlocks) const;
+                        KernelArgsTy &KernelArgs, uint32_t NumThreads[3],
+                        uint32_t NumBlocks[3]) const;
 
   /// Prints plugin-specific kernel launch information after generic kernel
   /// launch information
@@ -338,16 +338,16 @@ private:
                     KernelLaunchEnvironmentTy *KernelLaunchEnvironment) const;
 
   /// Get the number of threads and blocks for the kernel based on the
-  /// user-defined threads and block clauses.
-  uint32_t getNumThreads(GenericDeviceTy &GenericDevice,
-                         uint32_t ThreadLimitClause[3]) const;
+  /// user-defined threads and block clauses. \p ThreadLimitClause is updated.
+  void getNumThreads(GenericDeviceTy &GenericDevice,
+                     uint32_t ThreadLimitClause[3]) const;
 
   /// The number of threads \p NumThreads can be adjusted by this method.
   /// \p IsNumThreadsFromUser is true is \p NumThreads is defined by user via
-  /// thread_limit clause.
-  uint64_t getNumBlocks(GenericDeviceTy &GenericDevice,
-                        uint32_t BlockLimitClause[3], uint64_t LoopTripCount,
-                        uint32_t &NumThreads, bool IsNumThreadsFromUser) const;
+  /// thread_limit clause. \p BlockLimitClause is updated.
+  void getNumBlocks(GenericDeviceTy &GenericDevice,
+                    uint32_t BlockLimitClause[3], uint64_t LoopTripCount,
+                    uint32_t &NumThreads, bool IsNumThreadsFromUser) const;
 
   /// Indicate if the kernel works in Generic SPMD, Generic or SPMD mode.
   bool isGenericSPMDMode() const {

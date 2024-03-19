@@ -148,8 +148,8 @@ struct CUDAKernelTy : public GenericKernelTy {
   }
 
   /// Launch the CUDA kernel function.
-  Error launchImpl(GenericDeviceTy &GenericDevice, uint32_t NumThreads,
-                   uint64_t NumBlocks, KernelArgsTy &KernelArgs, void *Args,
+  Error launchImpl(GenericDeviceTy &GenericDevice, uint32_t NumThreads[3],
+                   uint32_t NumBlocks[3], KernelArgsTy &KernelArgs, void *Args,
                    AsyncInfoWrapperTy &AsyncInfoWrapper) const override;
 
 private:
@@ -1228,9 +1228,10 @@ private:
     AsyncInfoWrapperTy AsyncInfoWrapper(*this, nullptr);
 
     KernelArgsTy KernelArgs = {};
-    if (auto Err = CUDAKernel.launchImpl(*this, /*NumThread=*/1u,
-                                         /*NumBlocks=*/1ul, KernelArgs, nullptr,
-                                         AsyncInfoWrapper))
+    uint32_t NumBlocksAndThreads[3] = {1, 1, 1};
+    if (auto Err = CUDAKernel.launchImpl(*this, NumBlocksAndThreads,
+                                         NumBlocksAndThreads, KernelArgs,
+                                         nullptr, AsyncInfoWrapper))
       return Err;
 
     Error Err = Plugin::success();
@@ -1273,7 +1274,7 @@ private:
 };
 
 Error CUDAKernelTy::launchImpl(GenericDeviceTy &GenericDevice,
-                               uint32_t NumThreads, uint64_t NumBlocks,
+                               uint32_t NumThreads[3], uint32_t NumBlocks[3],
                                KernelArgsTy &KernelArgs, void *Args,
                                AsyncInfoWrapperTy &AsyncInfoWrapper) const {
   CUDADeviceTy &CUDADevice = static_cast<CUDADeviceTy &>(GenericDevice);
@@ -1286,10 +1287,9 @@ Error CUDAKernelTy::launchImpl(GenericDeviceTy &GenericDevice,
       std::max(KernelArgs.DynCGroupMem, GenericDevice.getDynamicMemorySize());
 
   CUresult Res =
-      cuLaunchKernel(Func, NumBlocks, /*gridDimY=*/1,
-                     /*gridDimZ=*/1, NumThreads,
-                     /*blockDimY=*/1, /*blockDimZ=*/1, MaxDynCGroupMem, Stream,
-                     (void **)Args, nullptr);
+      cuLaunchKernel(Func, NumBlocks[0], NumBlocks[1], NumBlocks[2],
+                     NumThreads[0], NumThreads[1], NumThreads[2],
+                     MaxDynCGroupMem, Stream, (void **)Args, nullptr);
   return Plugin::check(Res, "Error in cuLaunchKernel for '%s': %s", getName());
 }
 
