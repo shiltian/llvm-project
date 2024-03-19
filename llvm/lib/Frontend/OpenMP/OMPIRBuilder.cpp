@@ -504,11 +504,13 @@ void OpenMPIRBuilder::getKernelArgsVector(TargetKernelArgs &KernelArgs,
   Value *NumTeams3D =
       Builder.CreateInsertValue(ZeroArray, KernelArgs.NumTeams[0], {0});
   for (unsigned I = 1; I < std::min(KernelArgs.NumTeams.size(), MaxDim); ++I)
-    Builder.CreateInsertValue(NumTeams3D, KernelArgs.NumTeams[I], {I});
+    NumTeams3D =
+        Builder.CreateInsertValue(NumTeams3D, KernelArgs.NumTeams[I], {I});
   Value *NumThreads3D =
       Builder.CreateInsertValue(ZeroArray, KernelArgs.NumThreads[0], {0});
   for (unsigned I = 1; I < std::min(KernelArgs.NumThreads.size(), MaxDim); ++I)
-    Builder.CreateInsertValue(NumThreads3D, KernelArgs.NumThreads[I], {I});
+    NumThreads3D =
+        Builder.CreateInsertValue(NumThreads3D, KernelArgs.NumThreads[I], {I});
 
   ArgsVector = {Version,
                 PointerNum,
