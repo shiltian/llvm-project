@@ -5847,8 +5847,13 @@ PreservedAnalyses OpenMPOptCGSCCPass::run(LazyCallGraph::SCC &C,
 
   Module &M = *C.begin()->getFunction().getParent();
 
-  if (PrintModuleBeforeOptimizations)
-    LLVM_DEBUG(dbgs() << TAG << "Module before OpenMPOpt CGSCC Pass:\n" << M);
+  if (PrintModuleBeforeOptimizations) {
+    LLVM_DEBUG({
+      dbgs() << TAG << "Module before OpenMPOpt CGSCC Pass:\n" << M;
+      for (auto *Fn : SCC)
+        dbgs() << "- " << Fn->getName() << "\n";
+    });
+  }
 
   KernelSet Kernels = getDeviceKernels(M);
 
