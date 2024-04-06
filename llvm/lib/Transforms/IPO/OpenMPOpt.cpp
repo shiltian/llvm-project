@@ -282,13 +282,13 @@ struct AAICVTracker;
 struct OMPInformationCache : public InformationCache {
   OMPInformationCache(Module &M, AnalysisGetter &AG,
                       BumpPtrAllocator &Allocator, SetVector<Function *> *CGSCC,
-                      bool OpenMPPostLink)
+                      bool OpenMPPostLink, bool IsModulePass)
       : InformationCache(M, AG, Allocator, CGSCC), OMPBuilder(M),
         OpenMPPostLink(OpenMPPostLink) {
 
     OMPBuilder.Config.IsTargetDevice = isOpenMPDevice(OMPBuilder.M);
     OMPBuilder.initialize();
-    initializeRuntimeFunctions(M);
+    initializeRuntimeFunctions(M, IsModulePass);
     initializeInternalControlVars();
   }
 
@@ -563,7 +563,7 @@ struct OMPInformationCache : public InformationCache {
 
   /// Helper to initialize all runtime function information for those defined
   /// in OpenMPKinds.def.
-  void initializeRuntimeFunctions(Module &M) {
+  void initializeRuntimeFunctions(Module &M, bool IsModulePass) {
 
     // Helper macros for handling __VA_ARGS__ in OMP_RTL
 #define OMP_TYPE(VarName, ...)                                                 \
@@ -618,13 +618,17 @@ struct OMPInformationCache : public InformationCache {
 
     // Remove the `noinline` attribute from `__kmpc`, `ompx::` and `omp_`
     // functions, except if `optnone` is present.
-    if (isOpenMPDevice(M)) {
+    if (isOpenMPDevice(M) && IsModulePass) {
       for (Function &F : M) {
-        for (StringRef Prefix : {"__kmpc", "_ZN4ompx", "omp_"})
+        for (StringRef Prefix : {"__kmpc", "_ZN4ompx", "omp_", "_omp_"}) {
+          if (!F.getName().starts_with(Prefix))
+            continue;
           if (F.hasFnAttribute(Attribute::NoInline) &&
-              F.getName().starts_with(Prefix) &&
               !F.hasFnAttribute(Attribute::OptimizeNone))
             F.removeFnAttr(Attribute::NoInline);
+          if (!F.hasFnAttribute(Attribute::NoInline))
+            F.addFnAttr(Attribute::AlwaysInline);
+        }
       }
     }
 
@@ -5788,7 +5792,8 @@ PreservedAnalyses OpenMPOptPass::run(Module &M, ModuleAnalysisManager &AM) {
 
   bool PostLink = LTOPhase == ThinOrFullLTOPhase::FullLTOPostLink ||
                   LTOPhase == ThinOrFullLTOPhase::ThinLTOPreLink;
-  OMPInformationCache InfoCache(M, AG, Allocator, /*CGSCC*/ nullptr, PostLink);
+  OMPInformationCache InfoCache(M, AG, Allocator, /*CGSCC*/ nullptr, PostLink,
+                                /*IsModulePass=*/true);
 
   unsigned MaxFixpointIterations =
       (isOpenMPDevice(M)) ? SetFixpointIterations : 32;
@@ -5874,7 +5879,8 @@ PreservedAnalyses OpenMPOptCGSCCPass::run(LazyCallGraph::SCC &C,
                   LTOPhase == ThinOrFullLTOPhase::ThinLTOPreLink;
   SetVector<Function *> Functions(SCC.begin(), SCC.end());
   OMPInformationCache InfoCache(*(Functions.back()->getParent()), AG, Allocator,
-                                /*CGSCC*/ &Functions, PostLink);
+                                /*CGSCC*/ &Functions, PostLink,
+                                /*IsModulePass=*/false);
 
   unsigned MaxFixpointIterations =
       (isOpenMPDevice(M)) ? SetFixpointIterations : 32;
