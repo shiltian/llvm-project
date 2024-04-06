@@ -37,6 +37,7 @@
 #include "llvm/Analysis/ScalarEvolution.h"
 #include "llvm/Analysis/TargetTransformInfo.h"
 #include "llvm/Analysis/ValueTracking.h"
+#include "llvm/IR/AbstractCallSite.h"
 #include "llvm/IR/Argument.h"
 #include "llvm/IR/Assumptions.h"
 #include "llvm/IR/Attributes.h"
@@ -4100,10 +4101,19 @@ struct AAIsDeadValueImpl : public AAIsDead {
         if (!A.isRunOn(*I->getFunction()))
           return false;
       bool UsedAssumedInformation = false;
+      // Constants and arguments that cannot be deleted are fine when we
+      // determine if the simplified value is certainly available afterwards.
       std::optional<Constant *> C =
           A.getAssumedConstant(V, *this, UsedAssumedInformation);
       if (!C || *C)
         return true;
+      std::optional<Value *> SV = A.getAssumedSimplified(
+          V, *this, UsedAssumedInformation, AA::Intraprocedural);
+      if (!SV)
+        return true;
+      if (auto *Arg = dyn_cast_if_present<Argument>(*SV))
+        if (Arg->getParent()->hasFnAttribute("kernel"))
+          return true;
     }
 
     auto UsePred = [&](const Use &U, bool &Follow) { return false; };
