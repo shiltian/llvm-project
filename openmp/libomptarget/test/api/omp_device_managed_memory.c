@@ -26,4 +26,5 @@ int main() {
   // CHECK: PASS
   if (sum == N)
     printf("PASS\n");
+  printf("%i : %i\n", sum, N);
 }
