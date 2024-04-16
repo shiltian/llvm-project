@@ -841,6 +841,52 @@ void CGOpenMPRuntimeGPU::emitSPMDKernel(const OMPExecutableDirective &D,
     void Enter(CodeGenFunction &CGF) override {
       if (IsBareKernel) {
         RT.CurrentDataSharingMode = DataSharingMode::DS_CUDA;
+
+        // Emit omp_target_thread_limit and omp_target_num_teams attributes
+        using llvm::Function;
+        using llvm::APSInt;
+        using llvm::SmallVector;
+
+        Function *Kernel = CGF.Builder.GetInsertBlock()->getParent();
+
+        {
+          SmallVector<int> Vals;
+          const auto *C = D.getSingleClause<OMPNumTeamsClause>();
+          assert(C->varlist_size() && "empty num_teams clause");
+          for (auto *E : C->varlists()) {
+            APSInt ConstVal;
+            if (CGF.ConstantFoldsToSimpleInteger(E, ConstVal,
+                                                 /*AllowLabels=*/false))
+              Vals.push_back(ConstVal.getExtValue());
+          }
+          if (Vals.size() == C->varlist_size()) {
+            std::string Attr(std::to_string(Vals[0]));
+            // TODO: We don't support multi-dim in OpenMPOpt right now.
+            // for (unsigned I = 0; I < Vals.size(); ++I)
+            //   Attr += "," + std::to_string(Vals[I]);
+            Kernel->addFnAttr("omp_target_num_teams", Attr);
+          }
+        }
+
+        {
+          SmallVector<int> Vals;
+          const auto *C = D.getSingleClause<OMPThreadLimitClause>();
+          assert(C->varlist_size() && "empty thread_limit clause");
+          for (auto *E : C->varlists()) {
+            APSInt ConstVal;
+            if (CGF.ConstantFoldsToSimpleInteger(E, ConstVal,
+                                                 /*AllowLabels=*/false))
+              Vals.push_back(ConstVal.getExtValue());
+          }
+          if (Vals.size() == C->varlist_size()) {
+            std::string Attr(std::to_string(Vals[0]));
+            // TODO: We don't support multi-dim in OpenMPOpt right now.
+            // for (unsigned I = 0; I < Vals.size(); ++I)
+            //   Attr += "," + std::to_string(Vals[I]);
+            Kernel->addFnAttr("omp_target_thread_limit", Attr);
+          }
+        }
+
         return;
       }
       RT.emitKernelInit(D, CGF, EST, /* IsSPMD */ true);

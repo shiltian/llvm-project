@@ -5259,9 +5259,11 @@ struct AAFoldRuntimeCallCallSiteReturned : AAFoldRuntimeCall {
       Changed |= foldParallelLevel(A);
       break;
     case OMPRTL___kmpc_get_hardware_num_threads_in_block:
+    case OMPRTL_ompx_block_dim_x:
       Changed = Changed | foldKernelFnAttribute(A, "omp_target_thread_limit");
       break;
     case OMPRTL___kmpc_get_hardware_num_blocks:
+    case OMPRTL_ompx_grid_dim_x:
       Changed = Changed | foldKernelFnAttribute(A, "omp_target_num_teams");
       break;
     default:
@@ -5513,6 +5515,8 @@ void OpenMPOpt::registerAAs(bool IsModulePass) {
     registerFoldRuntimeCall(OMPRTL___kmpc_parallel_level);
     registerFoldRuntimeCall(OMPRTL___kmpc_get_hardware_num_threads_in_block);
     registerFoldRuntimeCall(OMPRTL___kmpc_get_hardware_num_blocks);
+    registerFoldRuntimeCall(OMPRTL_ompx_block_dim_x);
+    registerFoldRuntimeCall(OMPRTL_ompx_grid_dim_x);
   }
 
   // Create CallSite AA for all Getters.
