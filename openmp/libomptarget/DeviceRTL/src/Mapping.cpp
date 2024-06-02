@@ -364,31 +364,29 @@ _TGT_KERNEL_LANGUAGE(block_id, getBlockIdInKernel)
 _TGT_KERNEL_LANGUAGE(block_dim, getNumberOfThreadsInBlock)
 _TGT_KERNEL_LANGUAGE(grid_dim, getNumberOfBlocksInKernel)
 
-#undef _TGT_KERNEL_LANGUAGE
-
 extern "C" {
-int ompx_shfl_down_sync_i(unsigned mask, int var, unsigned delta, int width) {
+uint64_t ompx_ballot_sync(uint64_t mask, int pred) {
+  return utils::ballotSync(mask, pred);
+}
+
+int ompx_shfl_down_sync_i(uint64_t mask, int var, unsigned delta, int width) {
   return utils::shuffleDown(mask, var, delta, width);
 }
 
-float ompx_shfl_down_sync_f(unsigned mask, float var, unsigned delta,
+float ompx_shfl_down_sync_f(uint64_t mask, float var, unsigned delta,
                             int width) {
   return utils::convertViaPun<float>(utils::shuffleDown(
       mask, utils::convertViaPun<int32_t>(var), delta, width));
 }
 
-long ompx_shfl_down_sync_l(unsigned mask, long var, unsigned delta, int width) {
+long ompx_shfl_down_sync_l(uint64_t mask, long var, unsigned delta, int width) {
   return utils::shuffleDown(mask, var, delta, width);
 }
 
-double ompx_shfl_down_sync_d(unsigned mask, double var, unsigned delta,
+double ompx_shfl_down_sync_d(uint64_t mask, double var, unsigned delta,
                              int width) {
   return utils::convertViaPun<double>(utils::shuffleDown(
       mask, utils::convertViaPun<int64_t>(var), delta, width));
-}
-
-unsigned ompx_ballot_sync(unsigned mask, int pred) {
-  return utils::ballotSync(mask, pred);
 }
 }
 
