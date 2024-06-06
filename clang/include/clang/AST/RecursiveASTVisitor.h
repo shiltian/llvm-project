@@ -3783,7 +3783,7 @@ template <typename Derived>
 bool RecursiveASTVisitor<Derived>::VisitOMPNumTeamsClause(
     OMPNumTeamsClause *C) {
   TRY_TO(VisitOMPClauseWithPreInit(C));
-  TRY_TO(TraverseStmt(C->getNumTeams()));
+  TRY_TO(VisitOMPClauseList(C));
   return true;
 }
 
@@ -3791,7 +3791,7 @@ template <typename Derived>
 bool RecursiveASTVisitor<Derived>::VisitOMPThreadLimitClause(
     OMPThreadLimitClause *C) {
   TRY_TO(VisitOMPClauseWithPreInit(C));
-  TRY_TO(TraverseStmt(C->getThreadLimit()));
+  TRY_TO(VisitOMPClauseList(C));
   return true;
 }
 
