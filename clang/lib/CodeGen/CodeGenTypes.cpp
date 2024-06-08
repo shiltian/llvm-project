@@ -533,6 +533,8 @@ llvm::Type *CodeGenTypes::ConvertType(QualType T) {
       llvm_unreachable("Unexpected wasm reference builtin type!");             \
   } break;
 #include "clang/Basic/WebAssemblyReferenceTypes.def"
+    case BuiltinType::AMDGPUBufferRsrc:
+      return llvm::TargetExtType::get(getLLVMContext(), "amdgpu.bufferrsrc");
     case BuiltinType::Dependent:
 #define BUILTIN_TYPE(Id, SingletonId)
 #define PLACEHOLDER_TYPE(Id, SingletonId) \

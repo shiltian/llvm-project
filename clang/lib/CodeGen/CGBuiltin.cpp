@@ -19070,6 +19070,15 @@ Value *CodeGenFunction::EmitAMDGPUBuiltinExpr(unsigned BuiltinID,
         CGM.getIntrinsic(Intrinsic::amdgcn_s_sendmsg_rtn, {ResultType});
     return Builder.CreateCall(F, {Arg});
   }
+  case AMDGPU::BI__builtin_amdgcn_make_buffer_rsrc: {
+    llvm::Value *Base = EmitScalarExpr(E->getArg(0));
+    llvm::Value *Stride = EmitScalarExpr(E->getArg(1));
+    llvm::Value *Num = EmitScalarExpr(E->getArg(2));
+    llvm::Value *Flags = EmitScalarExpr(E->getArg(3));
+    Function *F =
+        CGM.getIntrinsic(Intrinsic::amdgcn_make_buffer_rsrc, {Base->getType()});
+    return Builder.CreateCall(F, {Base, Stride, Num, Flags});
+  }
   default:
     return nullptr;
   }

@@ -865,7 +865,8 @@ llvm::DIType *CGDebugInfo::CreateType(const BuiltinType *BT) {
     return SingletonId;                                                        \
   }
 #include "clang/Basic/WebAssemblyReferenceTypes.def"
-
+  case BuiltinType::AMDGPUBufferRsrc:
+    return CreateType(cast<const BuiltinType>(CGM.getContext().Int128Ty));
   case BuiltinType::UChar:
   case BuiltinType::Char_U:
     Encoding = llvm::dwarf::DW_ATE_unsigned_char;

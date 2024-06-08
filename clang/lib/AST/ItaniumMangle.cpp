@@ -3423,6 +3423,12 @@ void CXXNameMangler::mangleType(const BuiltinType *T) {
     Out << 'u' << type_name.size() << type_name;                               \
     break;
 #include "clang/Basic/WebAssemblyReferenceTypes.def"
+#define AMDGPU_OPAQUE_TYPE(InternalName, MangledName, Id, SingletonId)         \
+  case BuiltinType::Id:                                                        \
+    type_name = MangledName;                                                   \
+    Out << 'u' << type_name.size() << type_name;                               \
+    break;
+#include "clang/Basic/AMDGPUTypes.def"
   }
 }
 

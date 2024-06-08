@@ -770,6 +770,10 @@ void USRGenerator::VisitType(QualType T) {
         case BuiltinType::Id: \
           Out << "@BT@" << Name; break;
 #include "clang/Basic/RISCVVTypes.def"
+#define AMDGPU_TYPE(Name, Id, SingletonId) \
+        case BuiltinType::Id: \
+          Out << "@BT@" << #Name;  break;
+#include "clang/Basic/AMDGPUTypes.def"
 #define WASM_TYPE(Name, Id, SingletonId) case BuiltinType::Id:
 #include "clang/Basic/WebAssemblyReferenceTypes.def"
         case BuiltinType::ShortAccum:

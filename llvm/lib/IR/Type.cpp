@@ -845,6 +845,9 @@ static TargetTypeInfo getTargetTypeInfo(const TargetExtType *Ty) {
     return TargetTypeInfo(ScalableVectorType::get(Type::getInt1Ty(C), 16),
                           TargetExtType::HasZeroInit);
 
+  if (Name == "amdgpu.bufferrsrc")
+    return TargetTypeInfo(PointerType::get(C, 8), TargetExtType::HasZeroInit);
+
   return TargetTypeInfo(Type::getVoidTy(C));
 }
 
