@@ -730,7 +730,11 @@ struct AMDGPUQueueTy {
     assert(Packet && "Invalid packet");
 
     // The first 32 bits of the packet are written after the other fields
-    uint16_t Setup = UINT16_C(1) << HSA_KERNEL_DISPATCH_PACKET_SETUP_DIMENSIONS;
+    uint16_t Dims = NumBlocks[2] * NumThreads[2] > 1
+                        ? 3
+                        : 1 + (NumBlocks[1] * NumThreads[1] != 1);
+    uint16_t Setup = UINT16_C(Dims)
+                     << HSA_KERNEL_DISPATCH_PACKET_SETUP_DIMENSIONS;
     Packet->workgroup_size_x = NumThreads[0];
     Packet->workgroup_size_y = NumThreads[1];
     Packet->workgroup_size_z = NumThreads[2];
