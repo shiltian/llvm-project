@@ -149,6 +149,19 @@ BUILTIN(__builtin_amdgcn_mqsad_pk_u16_u8, "WUiWUiUiWUi", "nc")
 BUILTIN(__builtin_amdgcn_mqsad_u32_u8, "V4UiWUiUiV4Ui", "nc")
 
 BUILTIN(__builtin_amdgcn_make_buffer_rsrc, "Qbv*sii", "nc")
+BUILTIN(__builtin_amdgcn_raw_ptr_buffer_store_i8, "vcQbiiIi", "n")
+BUILTIN(__builtin_amdgcn_raw_ptr_buffer_store_i16, "vsQbiiIi", "n")
+BUILTIN(__builtin_amdgcn_raw_ptr_buffer_store_i32, "viQbiiIi", "n")
+BUILTIN(__builtin_amdgcn_raw_ptr_buffer_store_f16, "vhQbiiIi", "n")
+BUILTIN(__builtin_amdgcn_raw_ptr_buffer_store_f32, "vfQbiiIi", "n")
+BUILTIN(__builtin_amdgcn_raw_ptr_buffer_store_v2i16, "vV2sQbiiIi", "n")
+BUILTIN(__builtin_amdgcn_raw_ptr_buffer_store_v2i32, "vV2iQbiiIi", "n")
+BUILTIN(__builtin_amdgcn_raw_ptr_buffer_store_v2f16, "vV2hQbiiIi", "n")
+BUILTIN(__builtin_amdgcn_raw_ptr_buffer_store_v2f32, "vV2fQbiiIi", "n")
+BUILTIN(__builtin_amdgcn_raw_ptr_buffer_store_v4i16, "vV4sQbiiIi", "n")
+BUILTIN(__builtin_amdgcn_raw_ptr_buffer_store_v4i32, "vV4iQbiiIi", "n")
+BUILTIN(__builtin_amdgcn_raw_ptr_buffer_store_v4f16, "vV4hQbiiIi", "n")
+BUILTIN(__builtin_amdgcn_raw_ptr_buffer_store_v4f32, "vV4fQbiiIi", "n")
 
 //===----------------------------------------------------------------------===//
 // Ballot builtins.

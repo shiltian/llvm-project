@@ -626,6 +626,18 @@ static Value *emitQuaternaryBuiltin(CodeGenFunction &CGF, const CallExpr *E,
   return CGF.Builder.CreateCall(F, {Src0, Src1, Src2, Src3});
 }
 
+static Value *emitQuinaryBuiltin(CodeGenFunction &CGF, const CallExpr *E,
+                                 unsigned IntrinsicID) {
+  llvm::Value *Src0 = CGF.EmitScalarExpr(E->getArg(0));
+  llvm::Value *Src1 = CGF.EmitScalarExpr(E->getArg(1));
+  llvm::Value *Src2 = CGF.EmitScalarExpr(E->getArg(2));
+  llvm::Value *Src3 = CGF.EmitScalarExpr(E->getArg(3));
+  llvm::Value *Src4 = CGF.EmitScalarExpr(E->getArg(4));
+
+  Function *F = CGF.CGM.getIntrinsic(IntrinsicID, Src0->getType());
+  return CGF.Builder.CreateCall(F, {Src0, Src1, Src2, Src3, Src4});
+}
+
 // Emit an intrinsic that has 1 float or double operand, and 1 integer.
 static Value *emitFPIntBuiltin(CodeGenFunction &CGF,
                                const CallExpr *E,
@@ -19095,6 +19107,20 @@ Value *CodeGenFunction::EmitAMDGPUBuiltinExpr(unsigned BuiltinID,
   }
   case AMDGPU::BI__builtin_amdgcn_make_buffer_rsrc:
     return emitQuaternaryBuiltin(*this, E, Intrinsic::amdgcn_make_buffer_rsrc);
+  case AMDGPU::BI__builtin_amdgcn_raw_ptr_buffer_store_i8:
+  case AMDGPU::BI__builtin_amdgcn_raw_ptr_buffer_store_i16:
+  case AMDGPU::BI__builtin_amdgcn_raw_ptr_buffer_store_i32:
+  case AMDGPU::BI__builtin_amdgcn_raw_ptr_buffer_store_f32:
+  case AMDGPU::BI__builtin_amdgcn_raw_ptr_buffer_store_f16:
+  case AMDGPU::BI__builtin_amdgcn_raw_ptr_buffer_store_v2i16:
+  case AMDGPU::BI__builtin_amdgcn_raw_ptr_buffer_store_v2i32:
+  case AMDGPU::BI__builtin_amdgcn_raw_ptr_buffer_store_v2f16:
+  case AMDGPU::BI__builtin_amdgcn_raw_ptr_buffer_store_v2f32:
+  case AMDGPU::BI__builtin_amdgcn_raw_ptr_buffer_store_v4i16:
+  case AMDGPU::BI__builtin_amdgcn_raw_ptr_buffer_store_v4i32:
+  case AMDGPU::BI__builtin_amdgcn_raw_ptr_buffer_store_v4f16:
+  case AMDGPU::BI__builtin_amdgcn_raw_ptr_buffer_store_v4f32:
+    return emitQuinaryBuiltin(*this, E, Intrinsic::amdgcn_raw_ptr_buffer_store);
   default:
     return nullptr;
   }
