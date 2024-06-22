@@ -24811,6 +24811,18 @@ OMPClause *SemaOpenMP::ActOnOpenMPXBareClause(SourceLocation StartLoc,
   return new (getASTContext()) OMPXBareClause(StartLoc, EndLoc);
 }
 
+OMPClause *SemaOpenMP::ActOnOpenMPXNameClause(Expr *NE, SourceLocation StartLoc,
+                                              SourceLocation LParenLoc,
+                                              SourceLocation EndLoc) {
+  assert(NE && "NULL expr in Message clause");
+  if (!isa<StringLiteral>(NE)) {
+    Diag(NE->getBeginLoc(), diag::warn_clause_expected_string)
+        << getOpenMPClauseName(Clause::OMPC_ompx_name);
+    return nullptr;
+  }
+  return new (getASTContext()) OMPXNameClause(NE, StartLoc, LParenLoc, EndLoc);
+}
+
 ExprResult SemaOpenMP::ActOnOMPArraySectionExpr(
     Expr *Base, SourceLocation LBLoc, Expr *LowerBound,
     SourceLocation ColonLocFirst, SourceLocation ColonLocSecond, Expr *Length,

@@ -2760,6 +2760,8 @@ void OMPClauseEnqueue::VisitOMPXAttributeClause(const OMPXAttributeClause *C) {
 }
 void OMPClauseEnqueue::VisitOMPXBareClause(const OMPXBareClause *C) {}
 
+void OMPClauseEnqueue::VisitOMPXNameClause(const OMPXNameClause *) {}
+
 } // namespace
 
 void EnqueueVisitor::EnqueueChildren(const OMPClause *S) {

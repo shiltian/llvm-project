@@ -1323,6 +1323,11 @@ public:
   OMPClause *ActOnOpenMPXBareClause(SourceLocation StartLoc,
                                     SourceLocation EndLoc);
 
+  /// Called on a well-formed 'ompx_name' clause.
+  OMPClause *ActOnOpenMPXNameClause(Expr *NS, SourceLocation StartLoc,
+                                    SourceLocation LParenLoc,
+                                    SourceLocation EndLoc);
+
   ExprResult ActOnOMPArraySectionExpr(Expr *Base, SourceLocation LBLoc,
                                       Expr *LowerBound,
                                       SourceLocation ColonLocFirst,

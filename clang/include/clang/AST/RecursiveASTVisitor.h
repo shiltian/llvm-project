@@ -3964,6 +3964,12 @@ bool RecursiveASTVisitor<Derived>::VisitOMPXBareClause(OMPXBareClause *C) {
 }
 
 template <typename Derived>
+bool RecursiveASTVisitor<Derived>::VisitOMPXNameClause(OMPXNameClause *C) {
+  TRY_TO(TraverseStmt(C->getNameString()));
+  return true;
+}
+
+template <typename Derived>
 bool RecursiveASTVisitor<Derived>::TraverseOpenACCConstructStmt(
     OpenACCConstructStmt *C) {
   TRY_TO(VisitOpenACCClauseList(C->clauses()));

@@ -306,6 +306,9 @@ def OMPC_OMPX_Attribute : Clause<"ompx_attribute"> {
 def OMPC_OMX_Bare : Clause<"ompx_bare"> {
   let clangClass = "OMPXBareClause";
 }
+def OMPC_OMPX_Name : Clause<"ompx_name"> {
+  let clangClass = "OMPXNameClause";
+}
 def OMPC_OMPX_DynCGroupMem : Clause<"ompx_dyn_cgroup_mem"> {
   let clangClass = "OMPXDynCGroupMemClause";
   let flangClass = "ScalarIntExpr";

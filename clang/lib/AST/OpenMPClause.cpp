@@ -2571,6 +2571,11 @@ void OMPClausePrinter::VisitOMPXBareClause(OMPXBareClause *Node) {
   OS << "ompx_bare";
 }
 
+void OMPClausePrinter::VisitOMPXNameClause(OMPXNameClause *Node) {
+  OS << "ompx_name(\""
+     << cast<StringLiteral>(Node->getNameString())->getString() << "\")";
+}
+
 void OMPTraitInfo::getAsVariantMatchInfo(ASTContext &ASTCtx,
                                          VariantMatchInfo &VMI) const {
   for (const OMPTraitSet &Set : Sets) {

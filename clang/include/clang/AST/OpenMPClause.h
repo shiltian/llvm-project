@@ -9377,6 +9377,71 @@ public:
   OMPXBareClause() = default;
 };
 
+/// This represents 'ompx_name' clause in the '#pragma omp target' directive
+///
+/// \code
+/// #pragma omp target ompx_name("my_kernel")
+/// \endcode
+/// In this example directive '#pragma omp target' has simple 'ompx_name' clause
+/// with user defined name of "my_kernel". The outlined kernel entry function
+/// will be named by "my_kernel"l
+class OMPXNameClause final : public OMPClause {
+  friend class OMPClauseReader;
+
+  /// Location of '('
+  SourceLocation LParenLoc;
+
+  // Expression of the 'ompx_name' clause.
+  Stmt *NameString = nullptr;
+
+  /// Set message string of the clause.
+  void setNameString(Expr *MS) { NameString = MS; }
+
+  /// Sets the location of '('.
+  void setLParenLoc(SourceLocation Loc) { LParenLoc = Loc; }
+
+public:
+  /// Build 'message' clause with message string argument
+  ///
+  /// \param NS Argument of the clause (name string).
+  /// \param StartLoc Starting location of the clause.
+  /// \param LParenLoc Location of '('.
+  /// \param EndLoc Ending location of the clause.
+  OMPXNameClause(Expr *NS, SourceLocation StartLoc, SourceLocation LParenLoc,
+                SourceLocation EndLoc)
+      : OMPClause(llvm::omp::OMPC_ompx_name, StartLoc, EndLoc),
+        LParenLoc(LParenLoc), NameString(NS) {}
+
+  /// Build an empty clause.
+  OMPXNameClause()
+      : OMPClause(llvm::omp::OMPC_message, SourceLocation(), SourceLocation()) {
+  }
+
+  /// Returns the locaiton of '('.
+  SourceLocation getLParenLoc() const { return LParenLoc; }
+
+  /// Returns message string of the clause.
+  Expr *getNameString() const { return cast_or_null<Expr>(NameString); }
+
+  child_range children() { return child_range(&NameString, &NameString + 1); }
+
+  const_child_range children() const {
+    return const_child_range(&NameString, &NameString + 1);
+  }
+
+  child_range used_children() {
+    return child_range(child_iterator(), child_iterator());
+  }
+
+  const_child_range used_children() const {
+    return const_child_range(const_child_iterator(), const_child_iterator());
+  }
+
+  static bool classof(const OMPClause *T) {
+    return T->getClauseKind() == llvm::omp::OMPC_ompx_name;
+  }
+};
+
 } // namespace clang
 
 #endif // LLVM_CLANG_AST_OPENMPCLAUSE_H

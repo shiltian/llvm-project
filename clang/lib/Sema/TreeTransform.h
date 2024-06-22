@@ -2426,6 +2426,17 @@ public:
     return getSema().OpenMP().ActOnOpenMPXBareClause(StartLoc, EndLoc);
   }
 
+  /// Build a new OpenMP 'ompx_name' clause.
+  ///
+  /// By default, performs semantic analysis to build the new OpenMP clause.
+  /// Subclasses may override this routine to provide different behavior.
+  OMPClause *RebuildOMPXNameClause(Expr *NS, SourceLocation StartLoc,
+                                   SourceLocation LParenLoc,
+                                   SourceLocation EndLoc) {
+    return getSema().OpenMP().ActOnOpenMPXNameClause(NS, StartLoc, LParenLoc,
+                                                     EndLoc);
+  }
+
   /// Build a new OpenMP 'align' clause.
   ///
   /// By default, performs semantic analysis to build the new OpenMP clause.
@@ -11112,6 +11123,12 @@ TreeTransform<Derived>::TransformOMPXAttributeClause(OMPXAttributeClause *C) {
 template <typename Derived>
 OMPClause *TreeTransform<Derived>::TransformOMPXBareClause(OMPXBareClause *C) {
   return getDerived().RebuildOMPXBareClause(C->getBeginLoc(), C->getEndLoc());
+}
+
+template <typename Derived>
+OMPClause *TreeTransform<Derived>::TransformOMPXNameClause(OMPXNameClause *C) {
+  return getDerived().RebuildOMPXNameClause(
+      C->getNameString(), C->getBeginLoc(), C->getLParenLoc(), C->getEndLoc());
 }
 
 //===----------------------------------------------------------------------===//

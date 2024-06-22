@@ -10713,6 +10713,9 @@ OMPClause *OMPClauseReader::readClause() {
   case llvm::omp::OMPC_ompx_bare:
     C = new (Context) OMPXBareClause();
     break;
+  case llvm::omp::OMPC_ompx_name:
+    C = new (Context) OMPXNameClause();
+    break;
 #define OMP_CLAUSE_NO_CLASS(Enum, Str)                                         \
   case llvm::omp::Enum:                                                        \
     break;
@@ -11827,6 +11830,11 @@ void OMPClauseReader::VisitOMPXAttributeClause(OMPXAttributeClause *C) {
 }
 
 void OMPClauseReader::VisitOMPXBareClause(OMPXBareClause *C) {}
+
+void OMPClauseReader::VisitOMPXNameClause(OMPXNameClause *C) {
+  C->setNameString(Record.readSubExpr());
+  C->setLParenLoc(Record.readSourceLocation());
+}
 
 OMPTraitInfo *ASTRecordReader::readOMPTraitInfo() {
   OMPTraitInfo &TI = getContext().getNewOMPTraitInfo();
