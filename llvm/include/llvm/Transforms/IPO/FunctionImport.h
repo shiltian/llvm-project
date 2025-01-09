@@ -429,7 +429,8 @@ Error EmitImportsFiles(
 ///    PropagateAttrs is true
 void thinLTOFinalizeInModule(Module &TheModule,
                              const GVSummaryMapTy &DefinedGlobals,
-                             bool PropagateAttrs);
+                             bool PropagateAttrs,
+                             bool ForceImportAllFunctions = false);
 
 /// Internalize \p TheModule based on the information recorded in the summaries
 /// during global summary-based analysis.

@@ -650,11 +650,14 @@ Error lto::thinBackend(const Config &Conf, unsigned Task, AddStreamFn AddStream,
       TM->getTargetTriple().isOSBinFormatELF() &&
       TM->getRelocationModel() != Reloc::Static &&
       Mod.getPIELevel() == PIELevel::Default;
-  renameModuleForThinLTO(Mod, CombinedIndex, ClearDSOLocalOnDeclarations);
+  bool ForceImportAllFunctions = TM->getTargetTriple().isAMDGPU();
+  renameModuleForThinLTO(Mod, CombinedIndex, ClearDSOLocalOnDeclarations,
+                         /*GlobalsToImport=*/nullptr, ForceImportAllFunctions);
 
   dropDeadSymbols(Mod, DefinedGlobals, CombinedIndex);
 
-  thinLTOFinalizeInModule(Mod, DefinedGlobals, /*PropagateAttrs=*/true);
+  thinLTOFinalizeInModule(Mod, DefinedGlobals, /*PropagateAttrs=*/true,
+                          /*ForceImportAllFunctions=*/ForceImportAllFunctions);
 
   if (Conf.PostPromoteModuleHook && !Conf.PostPromoteModuleHook(Task, Mod))
     return finalizeOptimizationRemarks(std::move(DiagnosticOutputFile));

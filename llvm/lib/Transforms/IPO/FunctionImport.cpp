@@ -416,8 +416,8 @@ class GlobalsImporter final {
                          SmallVectorImpl<const GlobalVarSummary *> &Worklist) {
     for (const auto &VI : Summary.refs()) {
       if (!shouldImportGlobal(VI)) {
-        LLVM_DEBUG(
-            dbgs() << "Ref ignored! Target already in destination module.\n");
+        LLVM_DEBUG(dbgs() << "Ref ignored! Target considered as one that "
+                             "should not be imported.\n");
         continue;
       }
 
@@ -1614,7 +1614,8 @@ bool llvm::convertToDeclaration(GlobalValue &GV) {
 
 void llvm::thinLTOFinalizeInModule(Module &TheModule,
                                    const GVSummaryMapTy &DefinedGlobals,
-                                   bool PropagateAttrs) {
+                                   bool PropagateAttrs,
+                                   bool ForceImportAllFunctions) {
   DenseSet<Comdat *> NonPrevailingComdats;
   auto FinalizeInModule = [&](GlobalValue &GV, bool Propagate = false) {
     // See if the global summary analysis computed a new resolved linkage.
@@ -1666,7 +1667,8 @@ void llvm::thinLTOFinalizeInModule(Module &TheModule,
     // interposable property and possibly get inlined. Simply drop
     // the definition in that case.
     if (GlobalValue::isAvailableExternallyLinkage(NewLinkage) &&
-        GlobalValue::isInterposableLinkage(GV.getLinkage())) {
+        GlobalValue::isInterposableLinkage(GV.getLinkage()) &&
+        !ForceImportAllFunctions) {
       if (!convertToDeclaration(GV))
         // FIXME: Change this to collect replaced GVs and later erase
         // them from the parent module once thinLTOResolvePrevailingGUID is
@@ -1684,10 +1686,12 @@ void llvm::thinLTOFinalizeInModule(Module &TheModule,
         GV.setVisibility(GlobalValue::HiddenVisibility);
       }
 
-      LLVM_DEBUG(dbgs() << "ODR fixing up linkage for `" << GV.getName()
-                        << "` from " << GV.getLinkage() << " to " << NewLinkage
-                        << "\n");
-      GV.setLinkage(NewLinkage);
+      if (!ForceImportAllFunctions) {
+        LLVM_DEBUG(dbgs() << "ODR fixing up linkage for `" << GV.getName()
+                          << "` from " << GV.getLinkage() << " to "
+                          << NewLinkage << "\n");
+        GV.setLinkage(NewLinkage);
+      }
     }
     // Remove declarations from comdats, including available_externally
     // as this is a declaration for the linker, and will be dropped eventually.
@@ -1951,7 +1955,7 @@ Expected<bool> FunctionImporter::importFunctions(
 
     // Link in the specified functions.
     renameModuleForThinLTO(*SrcModule, Index, ClearDSOLocalOnDeclarations,
-                           &GlobalsToImport);
+                           &GlobalsToImport, ForceImportAll);
 
     if (PrintImports) {
       for (const auto *GV : GlobalsToImport)

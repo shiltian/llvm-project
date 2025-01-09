@@ -88,14 +88,15 @@ class FunctionImportGlobalProcessing {
   /// promoting local variables so that they can be reference externally by
   /// thin lto imported globals and converting strong external globals to
   /// available_externally.
-  void processGlobalsForThinLTO();
-  void processGlobalForThinLTO(GlobalValue &GV);
+  void processGlobalsForThinLTO(bool ForceImportAll);
+  void processGlobalForThinLTO(GlobalValue &GV, bool ForceImportAll);
 
   /// Get the new linkage for SGV that should be used in the linked destination
   /// module. Specifically, for ThinLTO importing or exporting it may need
   /// to be adjusted. When \p DoPromote is true then we must adjust the
   /// linkage for a required promotion of a local to global scope.
-  GlobalValue::LinkageTypes getLinkage(const GlobalValue *SGV, bool DoPromote);
+  GlobalValue::LinkageTypes getLinkage(const GlobalValue *SGV, bool DoPromote,
+                                       bool ForceImportAll);
 
 public:
   FunctionImportGlobalProcessing(Module &M, const ModuleSummaryIndex &Index,
@@ -120,16 +121,16 @@ public:
 #endif
   }
 
-  void run();
+  void run(bool ForceImportAllFunctions);
 };
 
 /// Perform in-place global value handling on the given Module for
 /// exported local functions renamed and promoted for ThinLTO.
-void renameModuleForThinLTO(
-    Module &M, const ModuleSummaryIndex &Index,
-    bool ClearDSOLocalOnDeclarations,
-    SetVector<GlobalValue *> *GlobalsToImport = nullptr);
+void renameModuleForThinLTO(Module &M, const ModuleSummaryIndex &Index,
+                            bool ClearDSOLocalOnDeclarations,
+                            SetVector<GlobalValue *> *GlobalsToImport = nullptr,
+                            bool ForceImportAllFunctions = false);
 
-} // End llvm namespace
+} // namespace llvm
 
 #endif

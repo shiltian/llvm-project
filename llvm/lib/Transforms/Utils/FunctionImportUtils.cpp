@@ -13,6 +13,7 @@
 
 #include "llvm/Transforms/Utils/FunctionImportUtils.h"
 #include "llvm/Support/CommandLine.h"
+#include "llvm/Support/Debug.h"
 using namespace llvm;
 
 /// Uses the "source_filename" instead of a Module hash ID for the suffix of
@@ -122,9 +123,8 @@ FunctionImportGlobalProcessing::getPromotedName(const GlobalValue *SGV) {
       ImportIndex.getModuleHash(SGV->getParent()->getModuleIdentifier()));
 }
 
-GlobalValue::LinkageTypes
-FunctionImportGlobalProcessing::getLinkage(const GlobalValue *SGV,
-                                           bool DoPromote) {
+GlobalValue::LinkageTypes FunctionImportGlobalProcessing::getLinkage(
+    const GlobalValue *SGV, bool DoPromote, bool ForceImportAll) {
   // Any local variable that is referenced by an exported function needs
   // to be promoted to global scope. Since we don't currently know which
   // functions reference which local variables/functions, we must treat
@@ -147,7 +147,8 @@ FunctionImportGlobalProcessing::getLinkage(const GlobalValue *SGV,
     // and/or optimization, but are turned into declarations later
     // during the EliminateAvailableExternally pass.
     if (doImportAsDefinition(SGV) && !isa<GlobalAlias>(SGV))
-      return GlobalValue::AvailableExternallyLinkage;
+      return ForceImportAll ? GlobalValue::ExternalLinkage
+                            : GlobalValue::AvailableExternallyLinkage;
     // An imported external declaration stays external.
     return SGV->getLinkage();
 
@@ -175,7 +176,7 @@ FunctionImportGlobalProcessing::getLinkage(const GlobalValue *SGV,
     // equivalent, so the issue described above for weak_any does not exist,
     // and the definition can be imported. It can be treated similarly
     // to an imported externally visible global value.
-    if (doImportAsDefinition(SGV) && !isa<GlobalAlias>(SGV))
+    if (doImportAsDefinition(SGV) && !isa<GlobalAlias>(SGV) && !ForceImportAll)
       return GlobalValue::AvailableExternallyLinkage;
     else
       return GlobalValue::ExternalLinkage;
@@ -193,7 +194,8 @@ FunctionImportGlobalProcessing::getLinkage(const GlobalValue *SGV,
     // If we are promoting the local to global scope, it is handled
     // similarly to a normal externally visible global.
     if (DoPromote) {
-      if (doImportAsDefinition(SGV) && !isa<GlobalAlias>(SGV))
+      if (doImportAsDefinition(SGV) && !isa<GlobalAlias>(SGV) &&
+          !ForceImportAll)
         return GlobalValue::AvailableExternallyLinkage;
       else
         return GlobalValue::ExternalLinkage;
@@ -217,7 +219,8 @@ FunctionImportGlobalProcessing::getLinkage(const GlobalValue *SGV,
   llvm_unreachable("unknown linkage type");
 }
 
-void FunctionImportGlobalProcessing::processGlobalForThinLTO(GlobalValue &GV) {
+void FunctionImportGlobalProcessing::processGlobalForThinLTO(
+    GlobalValue &GV, bool ForceImportAll) {
 
   ValueInfo VI;
   if (GV.hasName())
@@ -270,7 +273,7 @@ void FunctionImportGlobalProcessing::processGlobalForThinLTO(GlobalValue &GV) {
     // Save the original name string before we rename GV below.
     auto Name = GV.getName().str();
     GV.setName(getPromotedName(&GV));
-    GV.setLinkage(getLinkage(&GV, /* DoPromote */ true));
+    GV.setLinkage(getLinkage(&GV, /*DoPromote=*/true, ForceImportAll));
     assert(!GV.hasLocalLinkage());
     GV.setVisibility(GlobalValue::HiddenVisibility);
 
@@ -280,7 +283,7 @@ void FunctionImportGlobalProcessing::processGlobalForThinLTO(GlobalValue &GV) {
       if (C->getName() == Name)
         RenamedComdats.try_emplace(C, M.getOrInsertComdat(GV.getName()));
   } else
-    GV.setLinkage(getLinkage(&GV, /* DoPromote */ false));
+    GV.setLinkage(getLinkage(&GV, /*DoPromote=*/false, ForceImportAll));
 
   // When ClearDSOLocalOnDeclarations is true, clear dso_local if GV is
   // converted to a declaration, to disable direct access. Don't do this if GV
@@ -312,13 +315,14 @@ void FunctionImportGlobalProcessing::processGlobalForThinLTO(GlobalValue &GV) {
   }
 }
 
-void FunctionImportGlobalProcessing::processGlobalsForThinLTO() {
+void FunctionImportGlobalProcessing::processGlobalsForThinLTO(
+    bool ForceImportAllFunctions) {
   for (GlobalVariable &GV : M.globals())
-    processGlobalForThinLTO(GV);
+    processGlobalForThinLTO(GV, /*ForceImportAll=*/false);
   for (Function &SF : M)
-    processGlobalForThinLTO(SF);
+    processGlobalForThinLTO(SF, ForceImportAllFunctions);
   for (GlobalAlias &GA : M.aliases())
-    processGlobalForThinLTO(GA);
+    processGlobalForThinLTO(GA, /*ForceImportAll=*/false);
 
   // Replace any COMDATS that required renaming (because the COMDAT leader was
   // promoted and renamed).
@@ -331,12 +335,15 @@ void FunctionImportGlobalProcessing::processGlobalsForThinLTO() {
       }
 }
 
-void FunctionImportGlobalProcessing::run() { processGlobalsForThinLTO(); }
+void FunctionImportGlobalProcessing::run(bool ForceImportAllFunctions) {
+  processGlobalsForThinLTO(ForceImportAllFunctions);
+}
 
 void llvm::renameModuleForThinLTO(Module &M, const ModuleSummaryIndex &Index,
                                   bool ClearDSOLocalOnDeclarations,
-                                  SetVector<GlobalValue *> *GlobalsToImport) {
+                                  SetVector<GlobalValue *> *GlobalsToImport,
+                                  bool ForceImportAllFunctions) {
   FunctionImportGlobalProcessing ThinLTOProcessing(M, Index, GlobalsToImport,
                                                    ClearDSOLocalOnDeclarations);
-  ThinLTOProcessing.run();
+  ThinLTOProcessing.run(ForceImportAllFunctions);
 }
