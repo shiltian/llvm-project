@@ -144,8 +144,11 @@ Constant *llvm::ConstantFoldCastInstruction(unsigned opc, Constant *V,
   }
 
   if (V->isNullValue() && !DestTy->isX86_AMXTy() &&
-      opc != Instruction::AddrSpaceCast)
-    return Constant::getNullValue(DestTy);
+      opc != Instruction::AddrSpaceCast) {
+    return DestTy->isPointerTy()
+               ? ConstantPointerNull::get(cast<PointerType>(DestTy))
+               : Constant::getNullValue(DestTy);
+  }
 
   // If the cast operand is a constant expression, there's a few things we can
   // do to try to simplify it.

@@ -6502,7 +6502,8 @@ bool LLParser::parseConstantValue(Type *Ty, Constant *&C) {
     return false;
   }
   case ValID::t_Null:
-    C = Constant::getNullValue(Ty);
+    C = Ty->isPointerTy() ? ConstantPointerNull::get(cast<PointerType>(Ty))
+                          : Constant::getNullValue(Ty);
     return false;
   default:
     return error(Loc, "expected a constant value");

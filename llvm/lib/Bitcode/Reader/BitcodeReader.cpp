@@ -3276,7 +3276,9 @@ Error BitcodeReader::parseConstants() {
       if (auto *TETy = dyn_cast<TargetExtType>(CurTy))
         if (!TETy->hasProperty(TargetExtType::HasZeroInit))
           return error("Invalid type for a constant null value");
-      V = Constant::getNullValue(CurTy);
+      V = CurTy->isPointerTy()
+              ? ConstantPointerNull::get(cast<PointerType>(CurTy))
+              : Constant::getNullValue(CurTy);
       break;
     case bitc::CST_CODE_INTEGER:   // INTEGER: [intval]
       if (!CurTy->isIntOrIntVectorTy() || Record.empty())

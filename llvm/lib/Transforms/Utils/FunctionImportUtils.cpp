@@ -12,6 +12,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "llvm/Transforms/Utils/FunctionImportUtils.h"
+#include "llvm/IR/Constants.h"
 #include "llvm/Support/CommandLine.h"
 using namespace llvm;
 
@@ -294,8 +295,12 @@ void FunctionImportGlobalProcessing::processGlobalForThinLTO(GlobalValue &GV) {
         // references in IR module (not in combined index), so we can
         // ignore them when computing import. We do not export references
         // of writeonly object. See computeImportForReferencedGlobals
-        if (ImportIndex.isWriteOnly(GVS))
-          V->setInitializer(Constant::getNullValue(V->getValueType()));
+        if (ImportIndex.isWriteOnly(GVS)) {
+          V->setInitializer(V->getValueType()->isPointerTy()
+                                ? ConstantPointerNull::get(
+                                      cast<PointerType>(V->getValueType()))
+                                : Constant::getNullValue(V->getValueType()));
+        }
       }
     }
   }

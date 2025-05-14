@@ -384,7 +384,9 @@ Constant *Constant::getNullValue(Type *Ty) {
     return ConstantFP::get(Ty->getContext(),
                            APFloat::getZero(Ty->getFltSemantics()));
   case Type::PointerTyID:
-    return ConstantPointerNull::get(cast<PointerType>(Ty));
+    llvm_unreachable("hereherehereherehereherehere");
+    return ConstantExpr::getIntToPtr(
+        ConstantInt::get(Type::getInt8Ty(Ty->getContext()), 0), Ty);
   case Type::StructTyID:
   case Type::ArrayTyID:
   case Type::FixedVectorTyID:
@@ -732,7 +734,7 @@ static bool constantIsDead(const Constant *C, bool RemoveDeadUsers) {
     ReplaceableMetadataImpl::SalvageDebugInfo(*C);
     const_cast<Constant *>(C)->destroyConstant();
   }
-  
+
   return true;
 }
 
@@ -1132,13 +1134,23 @@ void ConstantFP::destroyConstantImpl() {
 //===----------------------------------------------------------------------===//
 
 Constant *ConstantAggregateZero::getSequentialElement() const {
-  if (auto *AT = dyn_cast<ArrayType>(getType()))
-    return Constant::getNullValue(AT->getElementType());
-  return Constant::getNullValue(cast<VectorType>(getType())->getElementType());
+  if (auto *AT = dyn_cast<ArrayType>(getType())) {
+    Type *EltTy = AT->getElementType();
+    return EltTy->isPointerTy()
+               ? ConstantPointerNull::get(cast<PointerType>(EltTy))
+               : Constant::getNullValue(EltTy);
+  }
+  Type *EltTy = cast<VectorType>(getType())->getElementType();
+  return EltTy->isPointerTy()
+             ? ConstantPointerNull::get(cast<PointerType>(EltTy))
+             : Constant::getNullValue(EltTy);
 }
 
 Constant *ConstantAggregateZero::getStructElement(unsigned Elt) const {
-  return Constant::getNullValue(getType()->getStructElementType(Elt));
+  Type *EltTy = getType()->getStructElementType(Elt);
+  return EltTy->isPointerTy()
+             ? ConstantPointerNull::get(cast<PointerType>(EltTy))
+             : Constant::getNullValue(EltTy);
 }
 
 Constant *ConstantAggregateZero::getElementValue(Constant *C) const {

@@ -325,8 +325,10 @@ Value *AA::getWithType(Value &V, Type &Ty) {
   if (isa<UndefValue>(V))
     return UndefValue::get(&Ty);
   if (auto *C = dyn_cast<Constant>(&V)) {
-    if (C->isNullValue())
-      return Constant::getNullValue(&Ty);
+    if (C->isNullValue()) {
+      return Ty.isPointerTy() ? ConstantPointerNull::get(cast<PointerType>(&Ty))
+                              : Constant::getNullValue(&Ty);
+    }
     if (C->getType()->isPointerTy() && Ty.isPointerTy())
       return ConstantExpr::getPointerCast(C, &Ty);
     if (C->getType()->getPrimitiveSizeInBits() >= Ty.getPrimitiveSizeInBits()) {

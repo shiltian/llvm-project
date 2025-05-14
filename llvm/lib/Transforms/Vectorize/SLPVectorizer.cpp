@@ -12779,7 +12779,10 @@ public:
           Vals.push_back(UndefValue::get(ScalarTy));
           continue;
         }
-        Vals.push_back(Constant::getNullValue(ScalarTy));
+        Vals.push_back(
+            ScalarTy->isPointerTy()
+                ? ConstantPointerNull::get(cast<PointerType>(ScalarTy))
+                : Constant::getNullValue(ScalarTy));
       }
       if (auto *VecTy = dyn_cast<FixedVectorType>(VLScalarTy)) {
         assert(SLPReVec && "FixedVectorType is not expected.");

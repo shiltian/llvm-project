@@ -1604,20 +1604,24 @@ bool AMDGPUPromoteAllocaImpl::tryPromoteAllocaToLDS(AllocaInst &I,
       assert(V->getType()->isPtrOrPtrVectorTy());
 
       Type *NewTy = V->getType()->getWithNewType(NewPtrTy);
+      Constant *NullVal =
+          NewTy->isPointerTy()
+              ? ConstantPointerNull::get(cast<PointerType>(NewTy))
+              : Constant::getNullValue(NewTy);
       V->mutateType(NewTy);
 
       // Adjust the types of any constant operands.
       if (SelectInst *SI = dyn_cast<SelectInst>(V)) {
         if (isa<ConstantPointerNull, ConstantAggregateZero>(SI->getOperand(1)))
-          SI->setOperand(1, Constant::getNullValue(NewTy));
+          SI->setOperand(1, NullVal);
 
         if (isa<ConstantPointerNull, ConstantAggregateZero>(SI->getOperand(2)))
-          SI->setOperand(2, Constant::getNullValue(NewTy));
+          SI->setOperand(2, NullVal);
       } else if (PHINode *Phi = dyn_cast<PHINode>(V)) {
         for (unsigned I = 0, E = Phi->getNumIncomingValues(); I != E; ++I) {
           if (isa<ConstantPointerNull, ConstantAggregateZero>(
                   Phi->getIncomingValue(I)))
-            Phi->setIncomingValue(I, Constant::getNullValue(NewTy));
+            Phi->setIncomingValue(I, NullVal);
         }
       }
 
