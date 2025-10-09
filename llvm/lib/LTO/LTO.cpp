@@ -57,8 +57,10 @@
 #include "llvm/Support/raw_ostream.h"
 #include "llvm/Target/TargetOptions.h"
 #include "llvm/Transforms/IPO.h"
+#include "llvm/Transforms/IPO/FunctionImport.h"
 #include "llvm/Transforms/IPO/MemProfContextDisambiguation.h"
 #include "llvm/Transforms/IPO/WholeProgramDevirt.h"
+#include "llvm/Transforms/Utils/Cloning.h"
 #include "llvm/Transforms/Utils/FunctionImportUtils.h"
 #include "llvm/Transforms/Utils/SplitModule.h"
 
@@ -1618,6 +1620,201 @@ public:
     return Error::success();
   }
 };
+
+//------------------------------------------------------------------------------
+//              AMDGPUThinLTO two round compilation backends
+//------------------------------------------------------------------------------
+
+/// A module manager for sharing modules and metadata between the two rounds of
+/// compilation.
+class AMDGPUThinLTOModuleManager {
+  SmallVector<std::unique_ptr<Module>> Modules;
+  AddStreamFn CGAddStreamFn;
+
+public:
+  AMDGPUThinLTOModuleManager(unsigned NumTasks) {
+    Modules.resize(NumTasks);
+    // TODO: finish this up.
+    CGAddStreamFn = [](unsigned Task, const Twine &ModuleName)
+        -> Expected<std::unique_ptr<CachedFileStream>> { return nullptr; };
+  }
+
+  /// Return the CGAddStreamFn for the first round compilation. This is a
+  /// temporary in-memory storage that is only used for collecting metadata.
+  AddStreamFn getCGAddStreamFn() const { return CGAddStreamFn; }
+
+  /// Extract the metadata from the code object of each translation unit and
+  /// combine them.
+  void finalize() {
+    // TODO: do this
+  }
+
+  /// Return the combined metadata for the second round compilation.
+  // TODO: Figure a data structure.
+  void getMetadata() const {}
+
+  /// Cache the module that is parsed in the first round such that we don't have
+  /// to parse it again in the second round.
+  Module &addModule(unsigned Task, std::unique_ptr<Module> Mod) {
+    assert(!Modules[Task]);
+    Modules[Task] = std::move(Mod);
+    return *Modules[Task];
+  }
+
+  /// Load module for the second round.
+  std::unique_ptr<Module> loadModule(const BitcodeModule &OrigMod,
+                                     unsigned Task) {
+    // TODO: Does this hold?
+    assert(Modules[Task]->getModuleIdentifier() !=
+           OrigMod.getModuleIdentifier());
+    return std::move(Modules[Task]);
+  }
+};
+
+/// The first round ThinBackend for AMDGPU. In this round, we only compile a
+/// module which contains functions whose addresses are taken. If the
+/// corresponding module doesn't have such a function, it simply returns sucess.
+/// The code object generated will be cached in the module manager such that the
+/// resource usage metadata can be extracted and combined later after the first
+/// round.
+class AMDGPUFirstRoundThinBackend : public InProcessThinBackend {
+  AMDGPUThinLTOModuleManager &ModuleManager;
+  FileCache IRCache;
+
+public:
+  AMDGPUFirstRoundThinBackend(
+      const Config &Conf, ModuleSummaryIndex &CombinedIndex,
+      ThreadPoolStrategy ThinLTOParallelism,
+      const DenseMap<StringRef, GVSummaryMapTy> &ModuleToDefinedGVSummaries,
+      AMDGPUThinLTOModuleManager &ModuleManager, AddStreamFn CGAddStream,
+      FileCache CGCache, FileCache IRCache)
+      : InProcessThinBackend(Conf, CombinedIndex, ThinLTOParallelism,
+                             ModuleToDefinedGVSummaries, std::move(CGAddStream),
+                             std::move(CGCache), /*OnWrite=*/nullptr,
+                             /*ShouldEmitIndexFiles=*/false,
+                             /*ShouldEmitImportsFiles=*/false),
+        ModuleManager(ModuleManager), IRCache(std::move(IRCache)) {}
+
+  Error runThinLTOBackendThread(
+      AddStreamFn CGAddStream, FileCache CGCache, unsigned Task,
+      BitcodeModule BM, ModuleSummaryIndex &CombinedIndex,
+      const FunctionImporter::ImportMapTy &ImportList,
+      const FunctionImporter::ExportSetTy &ExportList,
+      const std::map<GlobalValue::GUID, GlobalValue::LinkageTypes> &ResolvedODR,
+      const GVSummaryMapTy &DefinedGlobals,
+      MapVector<StringRef, BitcodeModule> &ModuleMap) override {
+    LTOLLVMContext BackendContext(Conf);
+    Expected<std::unique_ptr<Module>> MOrErr = BM.parseModule(BackendContext);
+    if (!MOrErr)
+      return MOrErr.takeError();
+    Module &M = ModuleManager.addModule(Task, std::move(*MOrErr));
+
+    SmallVector<const Function *, 8> WorkList;
+    SmallVector<Function *> AddressTakenFuncs;
+    for (Function &F : M) {
+      if (F.isDeclaration() || F.isIntrinsic())
+        continue;
+      // FIXME: Can we use default arguments here? I think we do want to ignore
+      // assume-like and LLVM-used calls.
+      if (F.hasAddressTaken(
+              /*PutOffender=*/nullptr, /*IgnoreCallbackUses=*/false,
+              /*IgnoreAssumeLikeCalls=*/true, /*IngoreLLVMUsed=*/true,
+              /*IgnoreARCAttachedCall=*/true, /*IgnoreCastedDirectCall=*/true))
+        WorkList.push_back(&F);
+    }
+
+    // If there is no function's address taken, we are not going to do anything
+    // in this round.
+    if (WorkList.empty())
+      return Error::success();
+
+    // Recursively add all callees into the keep list for this round of
+    // compilation.
+    SmallSetVector<const GlobalValue *, 8> KeepList;
+    while (!WorkList.empty()) {
+      const Function *F = WorkList.pop_back_val();
+      if (!KeepList.insert(cast<GlobalValue>(F)))
+        continue;
+
+      GlobalValueSummary *GVS = DefinedGlobals.lookup(F->getGUID());
+      assert(GVS && "no GVS for defined function");
+      auto *FS = dyn_cast<FunctionSummary>(GVS);
+      assert(FS && "not a valid function summary");
+      for (auto &[VI, _] : FS->calls()) {
+        if (!VI.haveGVs()) {
+          // TODO: what happens in this case here?
+          continue;
+        }
+        const Function *Callee = dyn_cast<Function>(VI.getValue());
+        if (!Callee || Callee->isDeclaration() || Callee->isIntrinsic()) {
+          // TODO: what happens when callee is nullptr?
+          continue;
+        }
+        WorkList.push_back(Callee);
+      }
+      for (const ValueInfo &VI : FS->refs())
+        KeepList.insert(VI.getValue());
+    }
+
+    // Clone the module and use it for this round of compilation.
+    ValueToValueMapTy VMap;
+    std::unique_ptr<Module> NewM =
+        CloneModule(M, VMap, [&KeepList](const GlobalValue *GV) -> bool {
+          return KeepList.contains(GV);
+        });
+
+    // FIXME: We will need to somehow tell the backend to save the resource
+    // usage metadata to somewhere. Maybe add a pass to dump that information?
+
+    return thinBackend(Conf, Task, ModuleManager.getCGAddStreamFn(), *NewM,
+                       CombinedIndex, ImportList, DefinedGlobals, &ModuleMap,
+                       Conf.CodeGenOnly);
+  }
+};
+
+/// The second round ThinBackend for AMDGPU. This round is more like a regular
+/// ThinLTO backend compilation, but the corresponding module is loaded from the
+/// first round such that they don't need to be parsed again. The combined
+/// resource usage metadata is loaded and embeded into the module.
+class AMDGPUSecondRoundThinBackend : public InProcessThinBackend {
+  AMDGPUThinLTOModuleManager &ModuleManager;
+  AddStreamFn IRAddStream;
+
+public:
+  AMDGPUSecondRoundThinBackend(
+      const Config &Conf, ModuleSummaryIndex &CombinedIndex,
+      ThreadPoolStrategy ThinLTOParallelism,
+      const DenseMap<StringRef, GVSummaryMapTy> &ModuleToDefinedGVSummaries,
+      AMDGPUThinLTOModuleManager &ModuleManager, AddStreamFn CGAddStream,
+      FileCache CGCache, AddStreamFn IRAddStream, FileCache IRCache)
+      : InProcessThinBackend(Conf, CombinedIndex, ThinLTOParallelism,
+                             ModuleToDefinedGVSummaries, std::move(CGAddStream),
+                             std::move(CGCache), /*OnWrite=*/nullptr,
+                             /*ShouldEmitIndexFiles=*/false,
+                             /*ShouldEmitImportsFiles=*/false),
+        ModuleManager(ModuleManager), IRAddStream(IRAddStream) {}
+
+  Error runThinLTOBackendThread(
+      AddStreamFn CGAddStream, FileCache CGCache, unsigned Task,
+      BitcodeModule BM, ModuleSummaryIndex &CombinedIndex,
+      const FunctionImporter::ImportMapTy &ImportList,
+      const FunctionImporter::ExportSetTy &ExportList,
+      const std::map<GlobalValue::GUID, GlobalValue::LinkageTypes> &ResolvedODR,
+      const GVSummaryMapTy &DefinedGlobals,
+      MapVector<StringRef, BitcodeModule> &ModuleMap) override {
+    std::unique_ptr<Module> Mod = ModuleManager.loadModule(BM, Task);
+    assert(Mod);
+
+    // TODO: get the combined metadata and somehow embede it into the module.
+    ModuleManager.getMetadata();
+
+    return thinBackend(Conf, Task, CGAddStream, *Mod, CombinedIndex, ImportList,
+                       DefinedGlobals, &ModuleMap, Conf.CodeGenOnly,
+                       IRAddStream);
+  }
+};
+
+//------------------------------------------------------------------------------
 
 /// This backend is utilized in the first round of a two-codegen round process.
 /// It first saves optimized bitcode files to disk before the codegen process
